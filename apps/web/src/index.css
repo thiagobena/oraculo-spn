@@ -1,0 +1,302 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #08090e;
+    color: #f1f5f9;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    letter-spacing: -0.011em;
+  }
+}
+
+.font-brand {
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+}
+
+/* High-Tech & Luxury Brand Animations */
+@keyframes brand-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes brand-pulse-glow {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.95);
+    filter: blur(40px);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.35);
+    filter: blur(80px);
+  }
+}
+
+@keyframes brand-pulse-glow-lg {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.9);
+    filter: blur(140px);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.4);
+    filter: blur(190px);
+  }
+}
+
+@keyframes brand-pulse-glow-alt {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.92) rotate(0deg);
+    filter: blur(130px);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.35) rotate(10deg);
+    filter: blur(170px);
+  }
+}
+
+.animate-brand-shimmer {
+  background: linear-gradient(
+    115deg,
+    #ffffff 0%,
+    #cbd5e1 20%,
+    #a5b4fc 38%,
+    #38bdf8 46%,
+    #fbbf24 54%,
+    #94a3b8 72%,
+    #ffffff 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: brand-shimmer 5.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-brand-glow {
+  animation: brand-pulse-glow 4.5s ease-in-out infinite;
+}
+
+.animate-brand-glow-lg {
+  animation: brand-pulse-glow-lg 5.5s ease-in-out infinite;
+}
+
+.animate-brand-glow-alt {
+  animation: brand-pulse-glow-alt 7s ease-in-out infinite;
+}
+
+.animate-spin-slow {
+  animation: spin 8s linear infinite;
+}
+
+/* High-Tech Image Scanner Laser Animation */
+@keyframes scan-laser {
+  0% {
+    top: 0%;
+    opacity: 0.85;
+  }
+  50% {
+    top: 96%;
+    opacity: 1;
+  }
+  100% {
+    top: 0%;
+    opacity: 0.85;
+  }
+}
+
+.animate-scan-laser {
+  animation: scan-laser 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Robot Quantum Float & Neon Glow Keyframes */
+@keyframes robot-float-3d {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg) scale(1);
+    filter: drop-shadow(0 10px 20px rgba(56, 189, 248, 0.35));
+  }
+  50% {
+    transform: translateY(-12px) rotate(1.5deg) scale(1.03);
+    filter: drop-shadow(0 25px 35px rgba(56, 189, 248, 0.65));
+  }
+}
+
+@keyframes robot-aura-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.95);
+    filter: blur(25px);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.25);
+    filter: blur(35px);
+  }
+}
+
+.animate-robot-float {
+  animation: robot-float-3d 4s ease-in-out infinite;
+}
+
+.animate-robot-aura {
+  animation: robot-aura-pulse 4s ease-in-out infinite;
+}
+
+/* Glassmorphism & Ambient Utilities */
+.glass-panel {
+  background: rgba(14, 18, 28, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.glass-card {
+  background: rgba(18, 23, 37, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.glass-card-hover {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glass-card-hover:hover {
+  background: rgba(25, 32, 51, 0.85);
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 12px 40px -10px rgba(99, 102, 241, 0.25);
+  transform: translateY(-2px);
+}
+
+.glow-ambient {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(100px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.4);
+}
+
+/* Markdown prose styling */
+.prose-dark {
+  color: #e2e8f0;
+  line-height: 1.7;
+}
+
+.prose-dark h1, .prose-dark h2, .prose-dark h3, .prose-dark h4 {
+  color: #f8fafc;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+}
+
+.prose-dark h1 { font-size: 1.5rem; }
+.prose-dark h2 { font-size: 1.25rem; }
+.prose-dark h3 { font-size: 1.1rem; }
+
+.prose-dark p {
+  margin-bottom: 0.75em;
+}
+
+.prose-dark ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 0.75em;
+}
+
+.prose-dark ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 0.75em;
+}
+
+.prose-dark li {
+  margin-bottom: 0.25em;
+}
+
+.prose-dark blockquote {
+  border-left: 3px solid #6366f1;
+  padding-left: 1rem;
+  color: #a5b4fc;
+  font-style: italic;
+  margin: 1rem 0;
+  background: rgba(99, 102, 241, 0.05);
+  border-radius: 0 0.5rem 0.5rem 0;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.prose-dark table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.875rem;
+}
+
+.prose-dark th, .prose-dark td {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.6rem 0.85rem;
+  text-align: left;
+}
+
+.prose-dark th {
+  background-color: rgba(18, 23, 37, 0.9);
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.prose-dark tr:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.prose-dark code:not(pre code) {
+  background-color: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85em;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+/* SPN Grupo Logo Ambient Breathing Animation */
+@keyframes spn-logo-breathe {
+  0%, 100% {
+    opacity: 0.82;
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.12));
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.03);
+    filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.35));
+  }
+}
+
+.animate-spn-logo {
+  animation: spn-logo-breathe 4s ease-in-out infinite;
+}

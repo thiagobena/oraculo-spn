@@ -1,0 +1,28 @@
+{
+  "name": "oraculo-spn-root",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "concurrently -n \"API,WEB\" -c \"cyan.bold,magenta.bold\" \"npm run start -w @oraculo/api\" \"npm run preview -w @oraculo/web\"",
+    "start:secure": "node --import tsx/esm scripts/start-secure.ts",
+    "dev": "npm run dev:all",
+    "dev:all": "concurrently -n \"API,WEB\" -c \"cyan.bold,magenta.bold\" \"npm run dev -w @oraculo/api\" \"npm run dev -w @oraculo/web\"",
+    "dev:api": "npm run dev -w @oraculo/api",
+    "dev:web": "npm run dev -w @oraculo/web",
+    "build": "npm run build --workspaces --if-present",
+    "doctor": "node --import tsx/esm scripts/doctor.ts",
+    "test:lmstudio": "node --import tsx/esm scripts/test-lmstudio.ts",
+    "test:database": "node --import tsx/esm scripts/test-database.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

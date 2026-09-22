@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@oraculo/shared": ["../../packages/shared/dist/index.d.ts"],
+      "@oraculo/ai-core": ["../../packages/ai-core/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*"]
+}

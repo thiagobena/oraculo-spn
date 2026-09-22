@@ -1,0 +1,272 @@
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model AppSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String   @db.NVarChar(Max)
+  description String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+}
+
+model User {
+  id                     String    @id @default(uuid())
+  username               String    @unique
+  display_name           String
+  email                  String?
+  role                   String    @default("USUARIO") // USUARIO | ADMINISTRADOR
+  is_active              Boolean   @default(true)
+  monthly_token_quota    Int?      @default(100000)
+  tokens_used_this_month Int       @default(0)
+  quota_reset_at         DateTime?
+  rate_limit_rpm         Int       @default(30)
+  can_use_paid_llm       Boolean   @default(true)
+  last_login_at          DateTime?
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  conversations Conversation[]
+  audit_logs    AuditLog[]
+}
+
+
+model AIProviderConfig {
+  id         String   @id @default(uuid())
+  name       String
+  type       String   @default("lmstudio") // lmstudio | openai | anthropic | gemini | ollama | custom
+  base_url   String
+  api_key    String?
+  is_active  Boolean  @default(true)
+  is_paid    Boolean  @default(false)
+  priority   Int      @default(1)
+  timeout_ms Int      @default(60000)
+  settings   String?  @db.NVarChar(Max)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  models AIModelCache[]
+}
+
+model AIModelCache {
+  id                 String           @id @default(uuid())
+  provider_id        String
+  provider           AIProviderConfig @relation(fields: [provider_id], references: [id], onDelete: Cascade)
+  model_key          String
+  display_name       String
+  publisher          String?
+  architecture       String?
+  quantization       String?
+  context_length     Int              @default(4096)
+  max_context_length Int              @default(4096)
+  vision             Boolean          @default(false)
+  tools              Boolean          @default(false)
+  reasoning          Boolean          @default(false)
+  is_loaded          Boolean          @default(true)
+  raw_metadata       String?          @db.NVarChar(Max)
+  last_seen_at       DateTime         @default(now())
+
+  @@unique([provider_id, model_key])
+}
+
+model ModelSetting {
+  id                    String   @id @default(uuid())
+  model_key             String   @unique
+  custom_name           String?
+  temperature           Float?
+  top_p                 Float?
+  max_tokens            Int?
+  system_prompt         String?  @db.NVarChar(Max)
+  context_window        Int?
+  is_active             Boolean  @default(true)
+  is_pinned             Boolean  @default(false)
+  is_paid               Boolean  @default(false)
+  capabilities_override String?  @db.NVarChar(Max)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+}
+
+model Assistant {
+  id            String   @id @default(uuid())
+  name          String
+  description   String   @db.NVarChar(Max)
+  icon          String   @default("bot")
+  system_prompt String   @db.NVarChar(Max)
+  default_model String
+  temperature   Float    @default(0.7)
+  top_p         Float    @default(0.95)
+  max_tokens    Int      @default(4096)
+  is_active     Boolean  @default(true)
+  is_default    Boolean  @default(false)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  conversations Conversation[]
+}
+
+model ConversationFolder {
+  id                String   @id @default(uuid())
+  name              String
+  color             String?
+  icon              String?
+  position          Int      @default(0)
+  created_by_client String
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  conversations Conversation[]
+}
+
+model Conversation {
+  id                          String              @id @default(uuid())
+  title                       String
+  folder_id                   String?
+  folder                      ConversationFolder? @relation(fields: [folder_id], references: [id], onDelete: SetNull)
+  assistant_id                String?
+  assistant                   Assistant?          @relation(fields: [assistant_id], references: [id], onDelete: SetNull)
+  user_id                     String?
+  user                        User?               @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  default_model               String
+  pinned                      Boolean             @default(false)
+  archived                    Boolean             @default(false)
+  created_by_client           String
+  created_by_name             String
+  summary                     String?             @db.NVarChar(Max)
+  summarized_up_to_message_id String?
+  created_at                  DateTime            @default(now())
+  updated_at                  DateTime            @updatedAt
+
+  messages    Message[]
+  attachments Attachment[]
+}
+
+model Message {
+  id                String       @id @default(uuid())
+  conversation_id   String
+  conversation      Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  parent_message_id String?
+  parent            Message?     @relation("MessageHierarchy", fields: [parent_message_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children          Message[]    @relation("MessageHierarchy")
+
+  role              String
+  content           String   @db.NVarChar(Max)
+  model             String
+  provider          String   @default("lmstudio")
+  client_id         String
+  client_name       String
+  error             String?  @db.NVarChar(Max)
+  metadata          String?  @db.NVarChar(Max)
+  is_edited         Boolean  @default(false)
+  active_version_id String?
+  created_at        DateTime @default(now())
+
+  versions    MessageVersion[]
+  generation  Generation?
+  attachments Attachment[]
+  feedback    UserFeedback?
+}
+
+model MessageVersion {
+  id             String   @id @default(uuid())
+  message_id     String
+  message        Message  @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  version_number Int
+  content        String   @db.NVarChar(Max)
+  model          String
+  provider       String
+  created_at     DateTime @default(now())
+}
+
+model Attachment {
+  id              String        @id @default(uuid())
+  conversation_id String?
+  conversation    Conversation? @relation(fields: [conversation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  message_id      String?
+  message         Message?      @relation(fields: [message_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  filename        String
+  original_name   String
+  mime_type       String
+  file_size       Int
+  file_path       String
+  extracted_text  String?       @db.NVarChar(Max)
+  status          String        @default("ready")
+  error_message   String?
+  created_at      DateTime      @default(now())
+}
+
+model Generation {
+  id                 String   @id @default(uuid())
+  message_id         String   @unique
+  message            Message  @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  provider           String
+  model              String
+  input_tokens       Int?
+  output_tokens      Int?
+  total_tokens       Int?
+  ttft_ms            Int?
+  duration_ms        Int?
+  tokens_per_second  Float?
+  finish_reason      String?
+  reasoning_content  String?  @db.NVarChar(Max)
+  started_at         DateTime @default(now())
+  finished_at        DateTime @default(now())
+  error              String?  @db.NVarChar(Max)
+}
+
+model UserFeedback {
+  id         String   @id @default(uuid())
+  message_id String   @unique
+  message    Message  @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  rating     String
+  comment    String?
+  client_id  String
+  created_at DateTime @default(now())
+}
+
+model AuditLog {
+  id              String   @id @default(uuid())
+  client_id       String
+  client_name     String
+  user_id         String?
+  user            User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  action          String
+  ip_address      String?
+  conversation_id String?
+  message_id      String?
+  model           String?
+  provider        String?
+  status          String   @default("SUCCESS")
+  details         String?  @db.NVarChar(Max)
+  created_at      DateTime @default(now())
+}
+
+
+model TelemetryEvent {
+  id         String   @id @default(uuid())
+  event_type String
+  metrics    String   @db.NVarChar(Max)
+  created_at DateTime @default(now())
+}
+
+model DatabaseConnector {
+  id          String   @id @default(uuid())
+  name        String
+  db_type     String   @default("mysql") // mysql | mariadb | postgresql | sqlserver | oracle
+  host        String
+  port        Int      @default(3306)
+  database    String
+  username    String
+  password    String
+  use_ssl     Boolean  @default(false)
+  is_active   Boolean  @default(true)
+  description String?  @db.NVarChar(Max)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+}
+
