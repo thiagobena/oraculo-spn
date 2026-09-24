@@ -1,4 +1,4 @@
-# 🔮 ORÁCULO SPN — Placa Corporativa de Inteligência Artificial
+# 🔮 ORÁCULO SPN — IA Corporativa de Inteligência Artificial
 
 **ORÁCULO SPN** é uma plataforma corporativa de Inteligência Artificial para equipes de tecnologia, projetada para rodar em **Windows Server** e se comunicar via rede local com instâncias do **LM Studio** e banco de dados **Microsoft SQL Server**.
 
