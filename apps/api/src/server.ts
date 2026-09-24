@@ -17,6 +17,7 @@ import { registerTelemetryRoutes } from './routes/telemetry.js';
 import { registerAuditRoutes } from './routes/audit.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerDatabaseRoutes } from './routes/databases.js';
+import { registerSemanticRoutes } from './routes/semantic.js';
 import { reportRoutes } from './routes/reports.js';
 import { messagingRoutes } from './routes/messaging.js';
 import { SchedulerService } from './services/SchedulerService.js';
@@ -107,6 +108,7 @@ async function main() {
   registerAuditRoutes(app);
   registerSettingsRoutes(app, lmStudioProvider);
   registerDatabaseRoutes(app);
+  registerSemanticRoutes(app);
   await app.register(reportRoutes, { prefix: '/api/reports' });
   await app.register(messagingRoutes, { prefix: '/api/messaging' });
 

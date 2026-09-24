@@ -276,6 +276,10 @@ model DatabaseConnector {
   updated_at          DateTime @updatedAt
 
   presets             DataSourcePreset[]
+  semantic_tables     SemanticTable[]
+  business_terms      BusinessTerm[]
+  validated_queries   ValidatedQuery[]
+  semantic_metrics    SemanticMetric[]
 }
 
 model DataSourcePreset {
@@ -292,4 +296,184 @@ model DataSourcePreset {
   created_at         DateTime          @default(now())
   updated_at         DateTime          @updatedAt
 }
+
+// ==========================================
+// ORÁCULO IA VERSÃO 2 — CAMADA SEMÂNTICA
+// ==========================================
+
+model SemanticTable {
+  id                    String            @id @default(uuid())
+  data_source_id        String
+  data_source           DatabaseConnector @relation(fields: [data_source_id], references: [id], onDelete: Cascade)
+  schema_name           String            @default("public")
+  table_name            String
+  display_name          String?
+  technical_description String?           @db.NVarChar(Max)
+  business_description  String?           @db.NVarChar(Max)
+  business_domain       String?
+  synonyms              String?           @db.NVarChar(Max)
+  usage_notes           String?           @db.NVarChar(Max)
+  do_not_use_notes      String?           @db.NVarChar(Max)
+  priority              String            @default("normal") // low | normal | high
+  active                Boolean           @default(true)
+  ai_enabled            Boolean           @default(true)
+  status                String            @default("active") // active | missing | deprecated
+  row_estimate          Int?
+  pos_x                 Float?            @default(0)
+  pos_y                 Float?            @default(0)
+  created_at            DateTime          @default(now())
+  updated_at            DateTime          @updatedAt
+
+  columns                SemanticColumn[]
+  outgoing_relationships SemanticRelationship[] @relation("SourceTable")
+  incoming_relationships SemanticRelationship[] @relation("TargetTable")
+
+  @@unique([data_source_id, schema_name, table_name])
+}
+
+model SemanticColumn {
+  id                   String            @id @default(uuid())
+  semantic_table_id    String
+  semantic_table       SemanticTable     @relation(fields: [semantic_table_id], references: [id], onDelete: Cascade)
+  column_name          String
+  display_name         String?
+  data_type            String
+  is_nullable          Boolean           @default(true)
+  is_pk                Boolean           @default(false)
+  is_fk                Boolean           @default(false)
+  fk_target_table      String?
+  fk_target_column     String?
+  classification       String            @default("dimension") // identifier | dimension | measure | date | status | description | technical | sensitive
+  business_description String?           @db.NVarChar(Max)
+  synonyms             String?           @db.NVarChar(Max)
+  sample_values        String?           @db.NVarChar(Max)
+  ai_enabled           Boolean           @default(true)
+  status               String            @default("active") // active | missing | deprecated
+  created_at           DateTime          @default(now())
+  updated_at           DateTime          @updatedAt
+
+  outgoing_relationships SemanticRelationship[] @relation("SourceColumn")
+  incoming_relationships SemanticRelationship[] @relation("TargetColumn")
+
+  @@unique([semantic_table_id, column_name])
+}
+
+model SemanticRelationship {
+  id                   String          @id @default(uuid())
+  data_source_id       String
+  source_table_id      String
+  source_table         SemanticTable   @relation("SourceTable", fields: [source_table_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  source_column_id     String
+  source_column        SemanticColumn  @relation("SourceColumn", fields: [source_column_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  target_table_id      String
+  target_table         SemanticTable   @relation("TargetTable", fields: [target_table_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  target_column_id     String
+  target_column        SemanticColumn  @relation("TargetColumn", fields: [target_column_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cardinality          String          @default("N:1") // 1:1 | 1:N | N:1 | N:N
+  rel_type             String          @default("logical") // physical_fk | logical | semantic | manual
+  join_type            String          @default("INNER") // INNER | LEFT
+  join_expression      String?         // schemaA.tableA.columnA = schemaB.tableB.columnB
+  business_description String?         @db.NVarChar(Max)
+  usage_notes          String?         @db.NVarChar(Max)
+  do_not_use_notes     String?         @db.NVarChar(Max)
+  confidence           String          @default("manual") // automatic | manual | validated
+  status               String          @default("validated") // detected | suggested | validated | rejected | disabled
+  priority             String          @default("normal") // low | normal | high
+  created_by           String?
+  created_at           DateTime        @default(now())
+  updated_at           DateTime        @updatedAt
+}
+
+model BusinessTerm {
+  id                  String             @id @default(uuid())
+  data_source_id      String?
+  data_source         DatabaseConnector? @relation(fields: [data_source_id], references: [id], onDelete: SetNull)
+  name                String
+  description         String             @db.NVarChar(Max)
+  synonyms            String?            @db.NVarChar(Max)
+  business_domain     String?
+  formula             String?            @db.NVarChar(Max)
+  semantic_expression String?            @db.NVarChar(Max)
+  default_filters     String?            @db.NVarChar(Max)
+  active              Boolean            @default(true)
+  created_at          DateTime           @default(now())
+  updated_at          DateTime           @updatedAt
+}
+
+model SemanticMetric {
+  id                     String             @id @default(uuid())
+  data_source_id         String?
+  data_source            DatabaseConnector? @relation(fields: [data_source_id], references: [id], onDelete: SetNull)
+  name                   String
+  description            String             @db.NVarChar(Max)
+  formula                String             @db.NVarChar(Max)
+  aggregation            String             @default("SUM") // SUM | AVG | COUNT | COUNT_DISTINCT | MIN | MAX | CUSTOM
+  base_table             String
+  required_relationships String?            @db.NVarChar(Max)
+  default_filters        String?            @db.NVarChar(Max)
+  time_column            String?
+  synonyms               String?            @db.NVarChar(Max)
+  active                 Boolean            @default(true)
+  created_at             DateTime           @default(now())
+  updated_at             DateTime           @updatedAt
+}
+
+model ValidatedQuery {
+  id                   String             @id @default(uuid())
+  data_source_id       String?
+  data_source          DatabaseConnector? @relation(fields: [data_source_id], references: [id], onDelete: SetNull)
+  question             String             @db.NVarChar(Max)
+  normalized_question  String?            @db.NVarChar(Max)
+  sql                  String             @db.NVarChar(Max)
+  tables_used          String?            @db.NVarChar(Max)
+  columns_used         String?            @db.NVarChar(Max)
+  relationships_used   String?            @db.NVarChar(Max)
+  business_terms_used  String?            @db.NVarChar(Max)
+  tags                 String?
+  validation_status    String             @default("validated") // pending | validated | deprecated
+  usage_count          Int                @default(0)
+  created_by           String?
+  created_at           DateTime           @default(now())
+  updated_at           DateTime           @updatedAt
+}
+
+model SemanticTestCase {
+  id                     String    @id @default(uuid())
+  question               String    @db.NVarChar(Max)
+  expected_tables        String?   @db.NVarChar(Max)
+  expected_relationships String?   @db.NVarChar(Max)
+  expected_metric        String?
+  expected_filters       String?   @db.NVarChar(Max)
+  expected_behavior      String?   @db.NVarChar(Max)
+  last_run_status        String?   // passed | failed | pending
+  last_run_at            DateTime?
+  last_run_details       String?   @db.NVarChar(Max)
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+}
+
+model SemanticQueryLog {
+  id                     String    @id @default(uuid())
+  request_id             String    @unique
+  conversation_id        String?
+  message_id             String?
+  data_source_id         String?
+  question               String    @db.NVarChar(Max)
+  detected_intent        String?   @db.NVarChar(Max)
+  selected_tables        String?   @db.NVarChar(Max)
+  selected_columns       String?   @db.NVarChar(Max)
+  selected_relationships String?   @db.NVarChar(Max)
+  selected_metrics       String?   @db.NVarChar(Max)
+  selected_examples      String?   @db.NVarChar(Max)
+  query_plan             String?   @db.NVarChar(Max)
+  generated_sql          String?   @db.NVarChar(Max)
+  validation_result      String?   @db.NVarChar(Max)
+  confidence_score       Float?
+  query_duration_ms      Int?
+  row_count              Int?
+  response_status        String    @default("SUCCESS") // SUCCESS | ERROR | BLOCKED | AMBIGUOUS
+  engine_version         String    @default("2.0.0")
+  created_at             DateTime  @default(now())
+}
+
 

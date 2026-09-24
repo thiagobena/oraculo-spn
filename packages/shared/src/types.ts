@@ -338,6 +338,7 @@ export interface StreamChunkEvent {
   auto_selected_model?: string;
   auto_reason?: string;
   error?: string;
+  transparency_audit?: TransparencyAudit;
 }
 
 export type UserRole = 'USUARIO' | 'ADMINISTRADOR';
@@ -489,5 +490,19 @@ export interface LGPDConfigData {
   audit_sensitive_access: boolean;
   custom_legal_basis_prompt?: string;
 }
+
+export interface TransparencyAudit {
+  questionInterpreted: string;
+  tablesUsed: string[];
+  relationshipsUsed: string[];
+  metricsUsed: string[];
+  filtersApplied: string[];
+  sqlExecuted: string;
+  executionTimeMs: number;
+  rowCount: number;
+  confidenceScore: number;
+  dataSourceName: string;
+}
+
 
 

@@ -46,6 +46,12 @@ import {
   VolumeX,
   FileText,
   Tv,
+  Network,
+  Database,
+  Layers,
+  GitCommit,
+  Filter,
+  Code2,
 } from 'lucide-react';
 import { ExecutivePresentationModal } from './ExecutivePresentationModal';
 
@@ -660,6 +666,175 @@ const MessageMetadataFooter: React.FC<{ generation?: GenerationMetrics | null; m
   );
 };
 
+const TransparencyProvenanceCard: React.FC<{ audit?: any }> = ({ audit }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+
+  if (!audit) return null;
+
+  const handleCopySql = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (audit.sqlExecuted) {
+      navigator.clipboard.writeText(audit.sqlExecuted);
+      setCopiedSql(true);
+      setTimeout(() => setCopiedSql(false), 2000);
+    }
+  };
+
+  const confidencePct = audit.confidenceScore ? Math.round(audit.confidenceScore * 100) : 95;
+
+  return (
+    <div className="mt-4 rounded-2xl border border-cyan-500/30 bg-gradient-to-r from-cyan-950/25 via-slate-900/40 to-indigo-950/25 overflow-hidden shadow-lg shadow-cyan-950/20 transition-all duration-300">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-4 py-3 flex items-center justify-between text-xs font-semibold text-cyan-300 hover:bg-cyan-500/10 transition cursor-pointer select-none"
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded-lg bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+            <Network className="w-3.5 h-3.5" />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap text-left">
+            <span className="font-bold text-white tracking-wide">Como cheguei nesta resposta?</span>
+            <span className="text-[10px] text-cyan-400/80 font-normal hidden sm:inline">• Camada Semântica & Grafo de Dados</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-bold">
+            {confidencePct}% Confiança
+          </span>
+          {isOpen ? <ChevronUp className="w-4 h-4 text-cyan-400" /> : <ChevronDown className="w-4 h-4 text-cyan-400" />}
+        </div>
+      </button>
+
+      {isOpen && (
+        <div className="p-4 border-t border-cyan-500/20 bg-[#090b10] space-y-4 text-xs select-text animate-fade-in">
+          {/* Pergunta Interpretada e Fonte */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">
+                Interpretação da Pergunta
+              </span>
+              <p className="text-slate-200 font-medium">{audit.questionInterpreted || 'Consulta direta ao modelo'}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">
+                Fonte de Dados / Conector
+              </span>
+              <div className="flex items-center gap-2 text-slate-200 font-medium">
+                <Database className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{audit.dataSourceName || 'Banco Corporativo'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabelas e Métricas Utilizadas */}
+          <div className="space-y-3">
+            {audit.tablesUsed && audit.tablesUsed.length > 0 && (
+              <div>
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1.5">
+                  Tabelas Mapeadas Utilizadas ({audit.tablesUsed.length})
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {audit.tablesUsed.map((tbl: string, i: number) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 text-[11px] font-mono font-medium">
+                      <Layers className="w-3 h-3 text-indigo-400" />
+                      {tbl}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {audit.relationshipsUsed && audit.relationshipsUsed.length > 0 && (
+              <div>
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1.5">
+                  Caminhos Percorridos no Grafo ({audit.relationshipsUsed.length})
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {audit.relationshipsUsed.map((rel: string, i: number) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[11px] font-mono">
+                      <GitCommit className="w-3 h-3 text-emerald-400" />
+                      {rel}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {audit.metricsUsed && audit.metricsUsed.length > 0 && (
+              <div>
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1.5">
+                  Métricas & KPIs Homologados
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {audit.metricsUsed.map((m: string, i: number) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[11px]">
+                      {m}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {audit.filtersApplied && audit.filtersApplied.length > 0 && (
+              <div>
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1.5">
+                  Filtros de Negócio Aplicados
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {audit.filtersApplied.map((f: string, i: number) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 text-[11px] font-mono">
+                      <Filter className="w-3 h-3 text-slate-400" />
+                      {f}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* SQL Executado e Validado */}
+          {audit.sqlExecuted && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Code2 className="w-3.5 h-3.5 text-cyan-400" />
+                  Consulta SQL Validada & Executada
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopySql}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition text-[10px] font-mono cursor-pointer"
+                >
+                  {copiedSql ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedSql ? 'Copiado!' : 'Copiar SQL'}</span>
+                </button>
+              </div>
+              <pre className="p-3 rounded-xl bg-black/60 border border-white/10 font-mono text-[11px] text-cyan-200/90 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px]">
+                {audit.sqlExecuted}
+              </pre>
+            </div>
+          )}
+
+          {/* Rodapé com tempo de execução e total de linhas */}
+          <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-slate-400 font-mono flex-wrap gap-2">
+            <div className="flex items-center gap-3">
+              {audit.executionTimeMs !== undefined && (
+                <span>Tempo do motor: <strong className="text-slate-200">{audit.executionTimeMs}ms</strong></span>
+              )}
+              {audit.rowCount !== undefined && (
+                <span>Linhas retornadas: <strong className="text-slate-200">{audit.rowCount}</strong></span>
+              )}
+            </div>
+            <span className="text-[10px] text-cyan-400/80">Auditado por Oráculo Semantics Engine v2</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const MessageList: React.FC = () => {
   const clientId = useChatStore((s) => s.clientId);
   const activeConversation = useChatStore((s) => s.activeConversation);
@@ -995,6 +1170,11 @@ export const MessageList: React.FC = () => {
                       );
                     })}
                   </div>
+                )}
+
+                {/* Transparency / Provenance Card ("Como cheguei nesta resposta?") */}
+                {!isUser && m.metadata?.transparencyAudit && (
+                  <TransparencyProvenanceCard audit={m.metadata.transparencyAudit} />
                 )}
 
                 {/* Minimalist Metadata Footer (for Assistant responses) */}

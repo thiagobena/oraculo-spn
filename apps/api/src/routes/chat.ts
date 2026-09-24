@@ -10,6 +10,7 @@ import { DatabaseService } from '../services/DatabaseService.js';
 import { GLPIService } from '../services/GLPIService.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import { SemanticDataEngine } from '../services/semantic/SemanticDataEngine.js';
 
 async function selectOptimalModelAsync(
   requestedModel: string,
@@ -472,6 +473,7 @@ export function registerChatRoutes(fastify: FastifyInstance, provider: LMStudioP
       textLower.includes('top 5');
 
     const isDatabaseQuery = isGlpiQuery || isVendasQuery || isGenericDbQuery;
+    let transparencyAuditData: any = null;
 
     if (isDatabaseQuery) {
       try {
@@ -534,57 +536,114 @@ export function registerChatRoutes(fastify: FastifyInstance, provider: LMStudioP
                 .join('\n');
               databaseContextText = await GLPIService.fetchGLPIDataContext(targetConn.id, fullUserText, targetConn.name, recentHistory);
             } else if (targetConn.mode === 'live_query') {
-              // Conector Analítico / Datalake / ERP via NL2SQL com Auto-Healing e Suporte a Afunilamento (Histórico)
-              const recentHistoryObjects = (conv.messages || []).slice(-6).map((m) => ({
-                role: m.role,
-                content: m.content,
-              }));
-
-              const nlRes = await DatabaseService.generateNL2SQL(targetConn.id, fullUserText, recentHistoryObjects);
-              if (nlRes.success && nlRes.generated_query) {
+              // 1. Tentar execução prioritária via Camada Semântica Versão 2 (Se habilitada e mapeada)
+              if (SemanticDataEngine.USE_SEMANTIC_DATA_ENGINE) {
                 try {
-                  const queryRes = await DatabaseService.executeQueryWithAutoHealing(
-                    targetConn.id,
-                    fullUserText,
-                    nlRes.generated_query,
-                    { generateSummary: true }
-                  );
+                  const semanticTableCount = await (prisma as any).semanticTable.count({
+                    where: { data_source_id: targetConn.id, status: { not: 'missing' } },
+                  });
 
-                  if (queryRes.success) {
-                    const finalSql = queryRes.finalSql || nlRes.generated_query;
-                    if (queryRes.rows && queryRes.rows.length > 0) {
-                      databaseContextText = `\n\n[DADOS CONSULTADOS EM TEMPO REAL NO CONECTOR "${targetConn.name}"]:\n` +
-                        `Consulta SQL Executada: ${finalSql}\n` +
-                        (queryRes.wasHealed ? `(Nota: Consulta passou por auto-correção via IA para compatibilidade de esquema).\n` : '') +
-                        `Total de Registros Retornados: ${queryRes.rows.length}\n` +
-                        `Dados Retornados:\n${JSON.stringify(queryRes.rows.slice(0, 30), null, 2)}\n` +
-                        (queryRes.ai_summary ? `Resumo Analítico da IA: ${queryRes.ai_summary}\n` : '') +
-                        `\nDIRETRIZ DE VISUALIZAÇÃO E PRECISÃO:\n` +
-                        `- Apresente os dados com fidelidade absoluta aos registros retornados acima. Proibido inventar produtos, lojas ou valores adicionais.\n` +
-                        `- Quando a resposta envolver métricas comparativas ou rankings, inclua ao final da resposta um bloco json de gráfico interativo exatamente no formato:\n` +
-                        `\`\`\`json\n{\n  "type": "${nlRes.visualization_suggestion === 'pie_chart' ? 'pie' : nlRes.visualization_suggestion === 'line_chart' ? 'line' : 'bar'}",\n  "title": "${nlRes.explanation || 'Gráfico Analítico'}",\n  "data": [\n    { "name": "Nome Real Retornado", "value": 123.45 }\n  ]\n}\n\`\`\`\n` +
-                        `[FIM DOS DADOS EM TEMPO REAL]`;
+                  if (semanticTableCount > 0) {
+                    console.log(`[chat.ts] Executando consulta via SemanticDataEngine (Versão 2) para "${targetConn.name}"...`);
+                    const semanticRes = await SemanticDataEngine.ask({
+                      question: fullUserText,
+                      dataSourceId: targetConn.id,
+                      conversationId: targetConvId,
+                    });
+
+                    if (semanticRes.success && semanticRes.sql) {
+                      transparencyAuditData = semanticRes.transparencyAudit;
+                      const finalSql = semanticRes.sql;
+
+                      if (semanticRes.rows && semanticRes.rows.length > 0) {
+                        databaseContextText = `\n\n[DADOS CONSULTADOS VIA CAMADA SEMÂNTICA NO CONECTOR "${targetConn.name}"]:\n` +
+                          `Consulta SQL Executada: ${finalSql}\n` +
+                          `Tempo de Execução: ${semanticRes.executionTimeMs}ms (Grau de Confiança: ${(semanticRes.confidenceScore * 100).toFixed(0)}%)\n` +
+                          `Total de Registros Retornados: ${semanticRes.totalRows}\n` +
+                          `Dados Retornados:\n${JSON.stringify(semanticRes.rows.slice(0, 30), null, 2)}\n` +
+                          (semanticRes.answer ? `Interpretação da Camada Semântica:\n${semanticRes.answer}\n` : '') +
+                          `\nDIRETRIZ DE VISUALIZAÇÃO E PRECISÃO:\n` +
+                          `- Apresente os dados com fidelidade absoluta aos registros retornados acima. Proibido inventar produtos, lojas ou valores adicionais.\n` +
+                          `- Quando a resposta envolver métricas comparativas ou rankings, inclua ao final da resposta um bloco json de gráfico interativo exatamente no formato:\n` +
+                          `\`\`\`json\n{\n  "type": "${semanticRes.visualizationSuggestion === 'pie_chart' ? 'pie' : semanticRes.visualizationSuggestion === 'line_chart' ? 'line' : 'bar'}",\n  "title": "Gráfico Analítico",\n  "data": [\n    { "name": "Nome Real Retornado", "value": 123.45 }\n  ]\n}\n\`\`\`\n` +
+                          `[FIM DOS DADOS EM TEMPO REAL]`;
+                      } else {
+                        databaseContextText = `\n\n[DADOS CONSULTADOS VIA CAMADA SEMÂNTICA NO CONECTOR "${targetConn.name}"]:\n` +
+                          `Consulta SQL Executada: ${finalSql}\n` +
+                          `Resultado: A consulta foi executada com sucesso no banco de dados corporativo, porém retornou 0 registros para os filtros informados.\n` +
+                          `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO:\n` +
+                          `- Informe com precisão ao usuário que a base de dados corporativa foi consultada e retornou zero registros para esses critérios.\n` +
+                          `- NUNCA invente dados fictícios, produtos genéricos ou simulações. NUNCA gere gráficos com dados inventados.\n` +
+                          `[FIM DOS DADOS EM TEMPO REAL]`;
+                      }
+                    } else if (semanticRes.isAmbiguous && semanticRes.clarificationQuestion) {
+                      databaseContextText = `\n\n[AMBIGUIDADE NA PERGUNTA IDENTIFICADA PELA CAMADA SEMÂNTICA]:\n` +
+                        `Dúvida/Esclarecimento: "${semanticRes.clarificationQuestion}".\n` +
+                        `Apresente educadamente esta dúvida ao usuário para que ele possa especificar melhor o que deseja consultar.\n` +
+                        `[FIM DA AMBIGUIDADE]`;
                     } else {
-                      databaseContextText = `\n\n[DADOS CONSULTADOS EM TEMPO REAL NO CONECTOR "${targetConn.name}"]:\n` +
-                        `Consulta SQL Executada: ${finalSql}\n` +
-                        `Resultado: A consulta foi executada com sucesso no banco de dados corporativo, porém retornou 0 registros para os filtros informados (nenhuma venda/dado localizado na data ou filial especificada).\n` +
-                        `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO:\n` +
-                        `- Informe com precisão ao usuário que a base de dados corporativa foi consultada e retornou zero registros para esses critérios.\n` +
-                        `- NUNCA invente dados fictícios, produtos genéricos ou simulações. NUNCA gere gráficos com dados inventados.\n` +
-                        `[FIM DOS DADOS EM TEMPO REAL]`;
+                      console.warn(`[chat.ts] SemanticDataEngine não concluiu com SQL válido (${semanticRes.error || 'sem SQL'}). Acionando fallback legado...`);
                     }
-                  } else {
-                    databaseContextText = `\n\n[AVISO DE ERRO NA CONSULTA CORPORATIVA]:\nA consulta gerada não pôde ser executada com sucesso no conector "${targetConn.name}": ${queryRes.error || 'Erro desconhecido na execução'}.\n` +
-                      `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO: Informe ao usuário com transparência que houve uma falha técnica ao consultar a base corporativa e que não é possível exibir os dados de vendas no momento. NUNCA invente produtos ou números fictícios.`;
                   }
-                } catch (execErr: any) {
-                  console.warn(`[chat.ts] Falha na execução da consulta com auto-healing:`, execErr.message);
-                  databaseContextText = `\n\n[AVISO DE FALHA NA CONSULTA CORPORATIVA]:\nHouve um erro ao executar a consulta no conector "${targetConn.name}": ${execErr.message}.\n` +
-                    `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO: Informe com transparência ao usuário que a consulta corporativa falhou e não foi possível obter os dados. NUNCA invente dados fictícios.`;
+                } catch (semanticErr: any) {
+                  console.warn(`[chat.ts] Erro ao consultar SemanticDataEngine:`, semanticErr.message, 'Acionando fallback legado...');
                 }
-              } else {
-                databaseContextText = `\n\n[AVISO DE INDISPONIBILIDADE DE CONSULTA]:\nNão foi possível formular uma consulta válida para os dados do conector "${targetConn.name}" (${nlRes.error || 'Falha na formulação SQL'}).\n` +
-                  `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO: Avise o usuário que não foi possível consultar os dados corporativos no momento e sugira reformular a pergunta. NUNCA invente nomes de produtos, lojas ou valores de vendas fictícios.`;
+              }
+
+              // 2. Se a Camada Semântica não foi aplicada ou falhou, fallback transparente para o NL2SQL legado
+              if (!databaseContextText) {
+                // Conector Analítico / Datalake / ERP via NL2SQL com Auto-Healing e Suporte a Afunilamento (Histórico)
+                const recentHistoryObjects = (conv.messages || []).slice(-6).map((m) => ({
+                  role: m.role,
+                  content: m.content,
+                }));
+
+                const nlRes = await DatabaseService.generateNL2SQL(targetConn.id, fullUserText, recentHistoryObjects);
+                if (nlRes.success && nlRes.generated_query) {
+                  try {
+                    const queryRes = await DatabaseService.executeQueryWithAutoHealing(
+                      targetConn.id,
+                      fullUserText,
+                      nlRes.generated_query,
+                      { generateSummary: true }
+                    );
+
+                    if (queryRes.success) {
+                      const finalSql = queryRes.finalSql || nlRes.generated_query;
+                      if (queryRes.rows && queryRes.rows.length > 0) {
+                        databaseContextText = `\n\n[DADOS CONSULTADOS EM TEMPO REAL NO CONECTOR "${targetConn.name}"]:\n` +
+                          `Consulta SQL Executada: ${finalSql}\n` +
+                          (queryRes.wasHealed ? `(Nota: Consulta passou por auto-correção via IA para compatibilidade de esquema).\n` : '') +
+                          `Total de Registros Retornados: ${queryRes.rows.length}\n` +
+                          `Dados Retornados:\n${JSON.stringify(queryRes.rows.slice(0, 30), null, 2)}\n` +
+                          (queryRes.ai_summary ? `Resumo Analítico da IA: ${queryRes.ai_summary}\n` : '') +
+                          `\nDIRETRIZ DE VISUALIZAÇÃO E PRECISÃO:\n` +
+                          `- Apresente os dados com fidelidade absoluta aos registros retornados acima. Proibido inventar produtos, lojas ou valores adicionais.\n` +
+                          `- Quando a resposta envolver métricas comparativas ou rankings, inclua ao final da resposta um bloco json de gráfico interativo exatamente no formato:\n` +
+                          `\`\`\`json\n{\n  "type": "${nlRes.visualization_suggestion === 'pie_chart' ? 'pie' : nlRes.visualization_suggestion === 'line_chart' ? 'line' : 'bar'}",\n  "title": "${nlRes.explanation || 'Gráfico Analítico'}",\n  "data": [\n    { "name": "Nome Real Retornado", "value": 123.45 }\n  ]\n}\n\`\`\`\n` +
+                          `[FIM DOS DADOS EM TEMPO REAL]`;
+                      } else {
+                        databaseContextText = `\n\n[DADOS CONSULTADOS EM TEMPO REAL NO CONECTOR "${targetConn.name}"]:\n` +
+                          `Consulta SQL Executada: ${finalSql}\n` +
+                          `Resultado: A consulta foi executada com sucesso no banco de dados corporativo, porém retornou 0 registros para os filtros informados (nenhuma venda/dado localizado na data ou filial especificada).\n` +
+                          `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO:\n` +
+                          `- Informe com precisão ao usuário que a base de dados corporativa foi consultada e retornou zero registros para esses critérios.\n` +
+                          `- NUNCA invente dados fictícios, produtos genéricos ou simulações. NUNCA gere gráficos com dados inventados.\n` +
+                          `[FIM DOS DADOS EM TEMPO REAL]`;
+                      }
+                    } else {
+                      databaseContextText = `\n\n[AVISO DE ERRO NA CONSULTA CORPORATIVA]:\nA consulta gerada não pôde ser executada com sucesso no conector "${targetConn.name}": ${queryRes.error || 'Erro desconhecido na execução'}.\n` +
+                        `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO: Informe ao usuário com transparência que houve uma falha técnica ao consultar a base corporativa e que não é possível exibir os dados de vendas no momento. NUNCA invente produtos ou números fictícios.`;
+                    }
+                  } catch (execErr: any) {
+                    console.warn(`[chat.ts] Falha na execução da consulta com auto-healing:`, execErr.message);
+                    databaseContextText = `\n\n[AVISO DE FALHA NA CONSULTA CORPORATIVA]:\nHouve um erro ao executar a consulta no conector "${targetConn.name}": ${execErr.message}.\n` +
+                      `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO: Informe com transparência ao usuário que a consulta corporativa falhou e não foi possível obter os dados. NUNCA invente dados fictícios.`;
+                  }
+                } else {
+                  databaseContextText = `\n\n[AVISO DE INDISPONIBILIDADE DE CONSULTA]:\nNão foi possível formular uma consulta válida para os dados do conector "${targetConn.name}" (${nlRes.error || 'Falha na formulação SQL'}).\n` +
+                    `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO: Avise o usuário que não foi possível consultar os dados corporativos no momento e sugira reformular a pergunta. NUNCA invente nomes de produtos, lojas ou valores de vendas fictícios.`;
+                }
               }
             }
 
@@ -779,6 +838,7 @@ Você é o ORÁCULO SPN, assistente oficial de inteligência corporativa e dados
       user_message_id: userMessage.id,
       auto_selected_model: routerResult.wasAutoSelected ? effectiveModel : undefined,
       auto_reason: routerResult.wasAutoSelected ? routerResult.reason : undefined,
+      transparency_audit: transparencyAuditData || undefined,
       warning: contextResult.warningMessage,
     })}\n\n`);
 
@@ -829,6 +889,7 @@ Você é o ORÁCULO SPN, assistente oficial de inteligência corporativa e dados
                 provider: 'lmstudio',
                 client_id: 'oraculo-system',
                 client_name: 'ORÁCULO SPN',
+                metadata: transparencyAuditData ? JSON.stringify({ transparencyAudit: transparencyAuditData }) : null,
                 generation: {
                   create: {
                     provider: 'lmstudio',
@@ -862,6 +923,7 @@ Você é o ORÁCULO SPN, assistente oficial de inteligência corporativa e dados
               type: 'done',
               message_id: assistantMsg.id,
               generation_id: generationId,
+              transparency_audit: transparencyAuditData || undefined,
               metrics: {
                 duration_ms: metrics.duration_ms,
                 ttft_ms: metrics.ttft_ms,

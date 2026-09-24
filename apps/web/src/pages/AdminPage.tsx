@@ -19,9 +19,11 @@ import {
 import { useAuthStore } from '../store/useAuthStore';
 import { AssistantItem, AuditLogItem, UserItem, ADConfigData, AIProviderItem, ModelInfo, ModelSettingItem } from '@oraculo/shared';
 import { DatabaseSettingsTab } from '../components/DatabaseSettingsTab';
+import { SemanticIntelligenceTab } from '../components/semantic/SemanticIntelligenceTab';
 import { IntegrationsSettingsTab } from '../components/IntegrationsSettingsTab';
 import { LGPDSettingsTab } from '../components/LGPDSettingsTab';
 import {
+  Network,
   Shield,
   Cpu,
   Bot,
@@ -60,7 +62,7 @@ import {
 
 export const AdminPage: React.FC = () => {
   const { token } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'providers' | 'models' | 'quotas' | 'ad' | 'users' | 'assistants' | 'audit' | 'databases' | 'messaging' | 'lgpd'>('providers');
+  const [activeTab, setActiveTab] = useState<'providers' | 'models' | 'quotas' | 'ad' | 'users' | 'assistants' | 'audit' | 'databases' | 'semantic' | 'messaging' | 'lgpd'>('providers');
 
   // Gestão de LLMs & Parâmetros State
   const [llmModels, setLlmModels] = useState<ModelInfo[]>([]);
@@ -685,6 +687,17 @@ export const AdminPage: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setActiveTab('semantic')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all duration-200 shrink-0 ${
+            activeTab === 'semantic'
+              ? 'bg-gradient-to-r from-cyan-950/80 to-indigo-900/40 text-cyan-300 border border-cyan-500/50 shadow-md shadow-cyan-950/50 ring-1 ring-cyan-500/20'
+              : 'text-slate-400 hover:bg-[#141722] hover:text-slate-200'
+          }`}
+        >
+          <Network className="w-4 h-4 text-cyan-400" /> Inteligência de Dados & Mapa
+        </button>
+
+        <button
           onClick={() => setActiveTab('messaging')}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all duration-200 shrink-0 ${
             activeTab === 'messaging'
@@ -726,6 +739,9 @@ export const AdminPage: React.FC = () => {
 
       {/* ABA BANCOS DE DADOS */}
       {activeTab === 'databases' && <DatabaseSettingsTab token={token || ''} />}
+
+      {/* ABA INTELIGÊNCIA DE DADOS & CAMADA SEMÂNTICA (VERSÃO 2) */}
+      {activeTab === 'semantic' && <SemanticIntelligenceTab token={token || ''} />}
 
       {/* ABA 1: PROVEDORES MULTI-LLM */}
       {activeTab === 'providers' && (
