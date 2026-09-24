@@ -441,6 +441,72 @@ export function registerSettingsRoutes(fastify: FastifyInstance, provider: LMStu
       });
     }
   });
+
+  // --- Endpoints de Gestão de Políticas de LGPD & Privacidade ---
+  fastify.get('/api/settings/lgpd', { preHandler: [requireAdmin] }, async (_req, reply) => {
+    try {
+      const settings = await prisma.appSetting.findMany({
+        where: { key: { startsWith: 'lgpd_' } },
+      });
+
+      const map: Record<string, string> = {};
+      settings.forEach((s) => {
+        map[s.key] = s.value;
+      });
+
+      const lgpdConfig = {
+        lgpd_level: map['lgpd_level'] !== undefined ? Number(map['lgpd_level']) : 50,
+        lgpd_mode: map['lgpd_mode'] || 'smart',
+        allow_admin_bypass: map['lgpd_allow_admin_bypass'] === 'false' ? false : true,
+        mask_cpf: map['lgpd_mask_cpf'] || 'partial',
+        mask_email: map['lgpd_mask_email'] || 'none',
+        mask_phone: map['lgpd_mask_phone'] || 'none',
+        mask_financial: map['lgpd_mask_financial'] || 'partial',
+        mask_names: map['lgpd_mask_names'] || 'none',
+        audit_sensitive_access: map['lgpd_audit_sensitive_access'] === 'false' ? false : true,
+        custom_legal_basis_prompt: map['lgpd_custom_legal_basis_prompt'] || '',
+      };
+
+      return reply.send({ success: true, config: lgpdConfig });
+    } catch (e: any) {
+      return reply.status(500).send({ success: false, error: e.message });
+    }
+  });
+
+  fastify.put('/api/settings/lgpd', { preHandler: [requireAdmin] }, async (req, reply) => {
+    try {
+      const body = req.body as Record<string, any>;
+      const level = body.lgpd_level !== undefined ? Number(body.lgpd_level) : 50;
+
+      const keysToSave: Record<string, string> = {
+        lgpd_level: String(level),
+        lgpd_mode: body.lgpd_mode || (level === 0 ? 'disabled' : level === 100 ? 'strict' : 'smart'),
+        lgpd_allow_admin_bypass: String(body.allow_admin_bypass !== false),
+        lgpd_mask_cpf: body.mask_cpf || (level >= 75 ? 'full' : level >= 25 ? 'partial' : 'none'),
+        lgpd_mask_email: body.mask_email || (level >= 75 ? 'full' : 'none'),
+        lgpd_mask_phone: body.mask_phone || (level >= 75 ? 'full' : 'none'),
+        lgpd_mask_financial: body.mask_financial || (level >= 50 ? 'full' : 'partial'),
+        lgpd_mask_names: body.mask_names || (level >= 100 ? 'full' : 'none'),
+        lgpd_audit_sensitive_access: String(body.audit_sensitive_access !== false),
+        lgpd_custom_legal_basis_prompt: body.custom_legal_basis_prompt || '',
+      };
+
+      for (const [k, v] of Object.entries(keysToSave)) {
+        await prisma.appSetting.upsert({
+          where: { key: k },
+          update: { value: v },
+          create: { key: k, value: v },
+        });
+      }
+
+      return reply.send({
+        success: true,
+        message: 'Políticas de LGPD e Privacidade salvas com sucesso.',
+      });
+    } catch (e: any) {
+      return reply.status(500).send({ success: false, error: e.message });
+    }
+  });
 }
 
 

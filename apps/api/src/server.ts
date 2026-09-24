@@ -17,6 +17,9 @@ import { registerTelemetryRoutes } from './routes/telemetry.js';
 import { registerAuditRoutes } from './routes/audit.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerDatabaseRoutes } from './routes/databases.js';
+import { reportRoutes } from './routes/reports.js';
+import { messagingRoutes } from './routes/messaging.js';
+import { SchedulerService } from './services/SchedulerService.js';
 
 import fastifyJwt from '@fastify/jwt';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -104,6 +107,11 @@ async function main() {
   registerAuditRoutes(app);
   registerSettingsRoutes(app, lmStudioProvider);
   registerDatabaseRoutes(app);
+  await app.register(reportRoutes, { prefix: '/api/reports' });
+  await app.register(messagingRoutes, { prefix: '/api/messaging' });
+
+  // Iniciar Agendador de Relatórios & Notificações Automáticas
+  SchedulerService.init();
 
 
 

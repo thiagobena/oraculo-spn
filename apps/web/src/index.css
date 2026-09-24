@@ -9,6 +9,11 @@
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     letter-spacing: -0.011em;
   }
+
+  ::selection {
+    background-color: rgba(6, 182, 212, 0.35);
+    color: #ffffff;
+  }
 }
 
 .font-brand {

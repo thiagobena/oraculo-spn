@@ -255,18 +255,41 @@ model TelemetryEvent {
 }
 
 model DatabaseConnector {
-  id          String   @id @default(uuid())
-  name        String
-  db_type     String   @default("mysql") // mysql | mariadb | postgresql | sqlserver | oracle
-  host        String
-  port        Int      @default(3306)
-  database    String
-  username    String
-  password    String
-  use_ssl     Boolean  @default(false)
-  is_active   Boolean  @default(true)
-  description String?  @db.NVarChar(Max)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  id                  String   @id @default(uuid())
+  name                String
+  category            String   @default("database") // database | api | storage | web | automation
+  db_type             String   @default("mysql")    // mysql | mariadb | postgresql | sqlserver | rest_api | n8n | smb | s3 | web_url
+  host                String?
+  port                Int?     @default(3306)
+  database            String?
+  username            String?
+  password            String?
+  use_ssl             Boolean  @default(false)
+  is_active           Boolean  @default(true)
+  description         String?  @db.NVarChar(Max)
+  config_json         String?  @db.NVarChar(Max)
+  semantic_dictionary String?  @db.NVarChar(Max)
+  cache_ttl_seconds   Int      @default(0)
+  mode                String   @default("live_query") // live_query | rag_sync | action_tool
+  allowed_roles       String?  @default("ADMINISTRADOR,USUARIO")
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  presets             DataSourcePreset[]
+}
+
+model DataSourcePreset {
+  id                 String            @id @default(uuid())
+  connector_id       String
+  connector          DatabaseConnector @relation(fields: [connector_id], references: [id], onDelete: Cascade)
+  title              String
+  description        String?
+  category           String            @default("Geral")
+  query_payload      String            @db.NVarChar(Max)
+  visualization_type String            @default("table") // table | bar_chart | pie_chart | line_chart | kpi
+  badge_color        String?           @default("cyan")
+  is_system          Boolean           @default(false)
+  created_at         DateTime          @default(now())
+  updated_at         DateTime          @updatedAt
 }
 

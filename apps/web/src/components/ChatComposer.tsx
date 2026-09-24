@@ -45,9 +45,73 @@ export const ChatComposer: React.FC = () => {
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [isAgentPopoverOpen, setIsAgentPopoverOpen] = useState(false);
   const [isModeFilterPopoverOpen, setIsModeFilterPopoverOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  const toggleVoiceRecording = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Seu navegador não possui suporte para reconhecimento de voz. Recomendamos o uso do Google Chrome ou Edge.');
+      return;
+    }
+
+    if (isRecording) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (_) {}
+      }
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'pt-BR';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        setIsRecording(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        if (event.results && event.results.length > 0) {
+          const transcript = event.results[0][0].transcript;
+          if (transcript) {
+            setInputContent((prev) => (prev ? `${prev} ${transcript}` : transcript));
+            if (textareaRef.current) {
+              setTimeout(() => {
+                if (textareaRef.current) {
+                  textareaRef.current.style.height = 'auto';
+                  textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 220)}px`;
+                  textareaRef.current.focus();
+                }
+              }, 50);
+            }
+          }
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event.error);
+        setIsRecording(false);
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (e: any) {
+      console.error('Falha ao iniciar microfone:', e);
+      setIsRecording(false);
+    }
+  };
 
   const processFiles = async (files: File[]) => {
     if (!files || files.length === 0) return;
@@ -411,11 +475,15 @@ export const ChatComposer: React.FC = () => {
 
             <button
               type="button"
-              disabled
-              className="p-2.5 text-slate-400 bg-white/5 hover:bg-white/10 rounded-full transition border border-transparent"
-              title="Entrada por voz (Em breve)"
+              onClick={toggleVoiceRecording}
+              className={`p-2.5 rounded-full transition-all duration-300 border cursor-pointer ${
+                isRecording
+                  ? 'bg-rose-600/30 text-rose-400 border-rose-500/60 shadow-lg shadow-rose-500/30 animate-pulse scale-110'
+                  : 'text-slate-400 hover:text-cyan-400 bg-white/5 hover:bg-white/10 border-transparent hover:border-cyan-500/30'
+              }`}
+              title={isRecording ? 'Ouvindo... Clique para parar' : 'Falar por voz (Microfone)'}
             >
-              <Mic className="w-4 h-4" />
+              <Mic className={`w-4 h-4 ${isRecording ? 'animate-bounce text-rose-400' : ''}`} />
             </button>
 
             {isStreaming ? (

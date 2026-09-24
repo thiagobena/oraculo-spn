@@ -9,6 +9,7 @@ import {
   StreamChunkEvent,
   AutoRouterReport,
   DislikedFeedbackItem,
+  LGPDConfigData,
 } from '@oraculo/shared';
 
 const API_BASE = '/api';
@@ -389,7 +390,7 @@ export async function manageModelMemoryApi(token: string, modelKey: string, acti
   return res.json();
 }
 
-// --- Conectores de Banco de Dados ---
+// --- Conectores de Banco de Dados e Hub Universal de Dados ---
 export async function fetchDatabaseConnectorsApi(token: string) {
   const res = await fetch(`${API_BASE}/settings/databases`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -441,17 +442,101 @@ export async function testDatabaseConnectionApi(token: string, payload: any) {
   return res.json();
 }
 
-export async function queryDatabaseApi(token: string, connectorId: string, sql: string) {
+export async function introspectSchemaApi(token: string, connectorId: string) {
+  const res = await fetch(`${API_BASE}/settings/databases/schema`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ connector_id: connectorId }),
+  });
+  return res.json();
+}
+
+export async function generateNL2SQLApi(token: string, connectorId: string, userPrompt: string) {
+  const res = await fetch(`${API_BASE}/settings/databases/nl2sql`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ connector_id: connectorId, user_prompt: userPrompt }),
+  });
+  return res.json();
+}
+
+export async function queryDatabaseApi(token: string, connectorId: string, sql: string, generateSummary?: boolean) {
   const res = await fetch(`${API_BASE}/settings/databases/query`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ connector_id: connectorId, sql }),
+    body: JSON.stringify({ connector_id: connectorId, sql, generate_summary: generateSummary }),
   });
   return res.json();
 }
+
+export async function fetchConnectorPresetsApi(token: string, connectorId: string) {
+  const res = await fetch(`${API_BASE}/settings/databases/${connectorId}/presets`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.json();
+}
+
+export async function createConnectorPresetApi(token: string, connectorId: string, payload: any) {
+  const res = await fetch(`${API_BASE}/settings/databases/${connectorId}/presets`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+export async function updateConnectorPresetApi(token: string, presetId: string, payload: any) {
+  const res = await fetch(`${API_BASE}/settings/databases/presets/${presetId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+export async function deleteConnectorPresetApi(token: string, presetId: string) {
+  const res = await fetch(`${API_BASE}/settings/databases/presets/${presetId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.json();
+}
+
+// --- Gestão de Conformidade e Políticas de LGPD & Privacidade ---
+export async function fetchLGPDConfigApi(token: string): Promise<{ success: boolean; config: LGPDConfigData; error?: string }> {
+  const res = await fetch(`${API_BASE}/settings/lgpd`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.json();
+}
+
+export async function saveLGPDConfigApi(token: string, payload: Partial<LGPDConfigData>): Promise<{ success: boolean; message?: string; error?: string }> {
+  const res = await fetch(`${API_BASE}/settings/lgpd`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
 
 
 

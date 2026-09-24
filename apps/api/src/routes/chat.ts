@@ -285,38 +285,331 @@ export function registerChatRoutes(fastify: FastifyInstance, provider: LMStudioP
     }
 
     const rawUserText = content + attachmentsText;
-    const sanitization = PrivacyGuard.sanitizePrompt(rawUserText);
+
+    // --- Carregamento de Políticas de LGPD & Privacidade ---
+    const lgpdSettings = await prisma.appSetting.findMany({
+      where: { key: { startsWith: 'lgpd_' } },
+    });
+    const lgpdMap: Record<string, string> = {};
+    lgpdSettings.forEach((s) => {
+      lgpdMap[s.key] = s.value;
+    });
+
+    let detectedUserRole = 'user';
+    if (client_id) {
+      const dbUser = await prisma.user.findFirst({
+        where: { OR: [{ id: client_id }, { username: client_id }] },
+      });
+      if (dbUser?.role === 'ADMINISTRADOR') {
+        detectedUserRole = 'admin';
+      }
+    }
+
+    const currentLgpdConfig = {
+      lgpd_level: lgpdMap['lgpd_level'] !== undefined ? Number(lgpdMap['lgpd_level']) : 50,
+      lgpd_mode: (lgpdMap['lgpd_mode'] as any) || 'smart',
+      allow_admin_bypass: lgpdMap['lgpd_allow_admin_bypass'] === 'false' ? false : true,
+      mask_cpf: (lgpdMap['lgpd_mask_cpf'] as any) || 'partial',
+      mask_email: (lgpdMap['lgpd_mask_email'] as any) || 'none',
+      mask_phone: (lgpdMap['lgpd_mask_phone'] as any) || 'none',
+      mask_financial: (lgpdMap['lgpd_mask_financial'] as any) || 'partial',
+      mask_names: (lgpdMap['lgpd_mask_names'] as any) || 'none',
+      audit_sensitive_access: lgpdMap['lgpd_audit_sensitive_access'] === 'false' ? false : true,
+      custom_legal_basis_prompt: lgpdMap['lgpd_custom_legal_basis_prompt'] || '',
+    };
+
+    const sanitization = PrivacyGuard.sanitizePrompt(rawUserText, currentLgpdConfig);
     const fullUserText = sanitization.cleanText;
 
-    // --- Conexão e Busca de Dados Corporativos em Tempo Real (GLPI / MySQL) ---
+    // --- Conexão e Busca de Dados Corporativos em Tempo Real (GLPI / Vetor Lake / ERP / PostgreSQL) ---
     let databaseContextText = '';
     const textLower = fullUserText.toLowerCase();
 
-    if (
+    // 1. Detecção de Intenção GLPI / Suporte / TI
+    const isGlpiQuery =
       textLower.includes('glpi') ||
       textLower.includes('chamado') ||
+      textLower.includes('chamados') ||
       textLower.includes('ticket') ||
-      textLower.includes('aberto') ||
-      textLower.includes('pendente') ||
-      textLower.includes('banco de dados')
-    ) {
+      textLower.includes('tickets') ||
+      textLower.includes('incidente') ||
+      textLower.includes('incidentes') ||
+      textLower.includes('requisicao') ||
+      textLower.includes('requisição') ||
+      textLower.includes('suporte') ||
+      textLower.includes('tecnico') ||
+      textLower.includes('técnico') ||
+      textLower.includes('mttr') ||
+      textLower.includes('sla') ||
+      textLower.includes('csat') ||
+      textLower.includes('computador') ||
+      textLower.includes('patrimonio') ||
+      textLower.includes('patrimônio') ||
+      textLower.includes('gmud') ||
+      textLower.includes('mudança') ||
+      textLower.includes('mudanca') ||
+      textLower.includes('apontamento') ||
+      textLower.includes('horas trabalhadas') ||
+      textLower.includes('reincidência') ||
+      textLower.includes('reincidencia') ||
+      textLower.includes('reincidente') ||
+      textLower.includes('aging') ||
+      textLower.includes('balanceamento') ||
+      textLower.includes('mapa de calor') ||
+      textLower.includes('urgência real') ||
+      textLower.includes('urgencia real') ||
+      textLower.includes('urgência oculta') ||
+      textLower.includes('urgencia oculta') ||
+      textLower.includes('atribuir') ||
+      textLower.includes('atribua') ||
+      textLower.includes('solucionar') ||
+      textLower.includes('resolver');
+
+    // 2. Detecção de Intenção Vendas / Faturamento / Datalake / ERP / Varejo
+    const isVendasQuery =
+      textLower.includes('faturamento') ||
+      textLower.includes('faturado') ||
+      textLower.includes('faturar') ||
+      textLower.includes('faturou') ||
+      textLower.includes('venda') ||
+      textLower.includes('vendas') ||
+      textLower.includes('vendido') ||
+      textLower.includes('vendidos') ||
+      textLower.includes('loja') ||
+      textLower.includes('lojas') ||
+      textLower.includes('filial') ||
+      textLower.includes('filiais') ||
+      textLower.includes('cupom') ||
+      textLower.includes('cupons') ||
+      textLower.includes('nfce') ||
+      textLower.includes('nfe') ||
+      textLower.includes('produto') ||
+      textLower.includes('produtos') ||
+      textLower.includes('estoque') ||
+      textLower.includes('curva abc') ||
+      textLower.includes('curva') ||
+      textLower.includes('dre') ||
+      textLower.includes('receita') ||
+      textLower.includes('despesa') ||
+      textLower.includes('lucro') ||
+      textLower.includes('caixa') ||
+      textLower.includes('operador') ||
+      textLower.includes('vendedor') ||
+      textLower.includes('vendedores') ||
+      textLower.includes('farmaceutico') ||
+      textLower.includes('farmacêutico') ||
+      textLower.includes('ticket médio') ||
+      textLower.includes('ticket medio') ||
+      textLower.includes('cliente') ||
+      textLower.includes('clientes') ||
+      textLower.includes('fidelidade') ||
+      textLower.includes('fidelizado') ||
+      textLower.includes('convenio') ||
+      textLower.includes('convênio') ||
+      textLower.includes('convenios') ||
+      textLower.includes('convênios') ||
+      textLower.includes('medicamento') ||
+      textLower.includes('medicamentos') ||
+      textLower.includes('perfumaria') ||
+      textLower.includes('fabricante') ||
+      textLower.includes('laboratorio') ||
+      textLower.includes('laboratório') ||
+      textLower.includes('unipreco') ||
+      textLower.includes('unipreço') ||
+      textLower.includes('vetor') ||
+      textLower.includes('datalake') ||
+      textLower.includes('lake') ||
+      textLower.includes('meta') ||
+      textLower.includes('metas') ||
+      textLower.includes('forecast') ||
+      textLower.includes('projeção') ||
+      textLower.includes('projecao') ||
+      textLower.includes('run-rate') ||
+      textLower.includes('run rate') ||
+      textLower.includes('previsão') ||
+      textLower.includes('previsao') ||
+      textLower.includes('mom') ||
+      textLower.includes('yoy') ||
+      textLower.includes('same-store') ||
+      textLower.includes('same store') ||
+      textLower.includes('fraude') ||
+      textLower.includes('fraudes') ||
+      textLower.includes('perda') ||
+      textLower.includes('perdas') ||
+      textLower.includes('prevenção') ||
+      textLower.includes('prevencao') ||
+      textLower.includes('cancelamento') ||
+      textLower.includes('cancelamentos') ||
+      textLower.includes('desconto') ||
+      textLower.includes('descontos') ||
+      textLower.includes('estorno') ||
+      textLower.includes('estornos');
+
+    // 2.1 Detecção de Correlação Cruzada GLPI + Vetor Lake (Impacto de TI em Vendas)
+    const isCrossCorrelation =
+      (textLower.includes('impacto') || textLower.includes('correlacao') || textLower.includes('correlação') || textLower.includes('cruzamento') || textLower.includes('cruzada')) &&
+      (textLower.includes('glpi') || textLower.includes('ti') || textLower.includes('chamado') || textLower.includes('pdv') || textLower.includes('queda') || textLower.includes('lentid')) &&
+      (textLower.includes('venda') || textLower.includes('faturamento') || textLower.includes('loja') || textLower.includes('prejuizo') || textLower.includes('prejuízo'));
+
+    // 3. Detecção Genérica de Consulta a Dados
+    const isGenericDbQuery =
+      textLower.includes('banco de dados') ||
+      textLower.includes('consultar') ||
+      textLower.includes('consulta') ||
+      textLower.includes('relatório') ||
+      textLower.includes('relatorio') ||
+      textLower.includes('tabela') ||
+      textLower.includes('tabelas') ||
+      textLower.includes('volumetria') ||
+      textLower.includes('quantos') ||
+      textLower.includes('quanto') ||
+      textLower.includes('total') ||
+      textLower.includes('totais') ||
+      textLower.includes('resumo') ||
+      textLower.includes('ranking') ||
+      textLower.includes('top 10') ||
+      textLower.includes('top 20') ||
+      textLower.includes('top 5');
+
+    const isDatabaseQuery = isGlpiQuery || isVendasQuery || isGenericDbQuery;
+
+    if (isDatabaseQuery) {
       try {
         const activeConnectors = await (prisma as any).databaseConnector.findMany({
           where: { is_active: true },
         });
 
         if (activeConnectors.length > 0) {
+          // Conectores especializados
           const glpiConn = activeConnectors.find(
-            (c: any) => c.name.toLowerCase().includes('glpi') || c.database.toLowerCase().includes('glpi')
-          ) || activeConnectors[0];
+            (c: any) =>
+              (c.name && c.name.toLowerCase().includes('glpi')) ||
+              (c.database && c.database.toLowerCase().includes('glpi'))
+          );
 
-          if (glpiConn) {
-            databaseContextText = await GLPIService.fetchGLPIDataContext(glpiConn.id, fullUserText, glpiConn.name);
+          const salesLakeConn = activeConnectors.find(
+            (c: any) =>
+              (c.name && (c.name.toLowerCase().includes('vetor') || c.name.toLowerCase().includes('lake') || c.name.toLowerCase().includes('venda') || c.name.toLowerCase().includes('erp'))) ||
+              (c.database && (c.database.toLowerCase().includes('unipreco') || c.database.toLowerCase().includes('datalake') || c.database.toLowerCase().includes('erp') || c.database.toLowerCase().includes('vendas'))) ||
+              (c.db_type === 'postgresql' || c.db_type === 'sqlserver')
+          );
+
+          // Verificar se o usuário mencionou explicitamente o nome de algum conector ativo
+          const explicitConn = activeConnectors.find(
+            (c: any) => c.name && textLower.includes(c.name.toLowerCase().trim())
+          );
+
+          // Roteamento inteligente por domínio e intenção
+          let targetConn = explicitConn;
+          if (!targetConn) {
+            if (isVendasQuery && salesLakeConn) {
+              targetConn = salesLakeConn;
+            } else if (isGlpiQuery && glpiConn) {
+              targetConn = glpiConn;
+            } else {
+              targetConn = salesLakeConn || glpiConn || activeConnectors[0];
+            }
+          }
+
+          if (isCrossCorrelation) {
+            const crossRes = await DatabaseService.crossCorrelateGLPIAndVetorLake();
+            if (crossRes.success) {
+              databaseContextText = `\n\n[ANÁLISE DE CORRELAÇÃO CRUZADA: TI (GLPI) x VENDAS (VETOR LAKE)]:\n` +
+                `Resumo: ${crossRes.summary}\n` +
+                `Incidentes Operacionais Localizados no GLPI (${crossRes.incidentsFound}):\n` +
+                `${JSON.stringify(crossRes.glpiIncidents?.slice(0, 15), null, 2)}\n\n` +
+                `Médias e Faturamento das Lojas no Vetor Lake:\n` +
+                `${JSON.stringify(crossRes.storeBaselines?.slice(0, 15), null, 2)}\n` +
+                `[FIM DA CORRELAÇÃO CRUZADA - Responda correlacionando o impacto dos chamados no faturamento]`;
+            }
+          } else if (targetConn) {
+            const isGlpi =
+              (targetConn.name && targetConn.name.toLowerCase().includes('glpi')) ||
+              (targetConn.database && targetConn.database.toLowerCase().includes('glpi'));
+
+            if (isGlpi && targetConn.category === 'database') {
+              const recentHistory = (conv.messages || [])
+                .slice(-6)
+                .map((m) => m.content)
+                .join('\n');
+              databaseContextText = await GLPIService.fetchGLPIDataContext(targetConn.id, fullUserText, targetConn.name, recentHistory);
+            } else if (targetConn.mode === 'live_query') {
+              // Conector Analítico / Datalake / ERP via NL2SQL com Auto-Healing e Suporte a Afunilamento (Histórico)
+              const recentHistoryObjects = (conv.messages || []).slice(-6).map((m) => ({
+                role: m.role,
+                content: m.content,
+              }));
+
+              const nlRes = await DatabaseService.generateNL2SQL(targetConn.id, fullUserText, recentHistoryObjects);
+              if (nlRes.success && nlRes.generated_query) {
+                try {
+                  const queryRes = await DatabaseService.executeQueryWithAutoHealing(
+                    targetConn.id,
+                    fullUserText,
+                    nlRes.generated_query,
+                    { generateSummary: true }
+                  );
+
+                  if (queryRes.success) {
+                    const finalSql = queryRes.finalSql || nlRes.generated_query;
+                    if (queryRes.rows && queryRes.rows.length > 0) {
+                      databaseContextText = `\n\n[DADOS CONSULTADOS EM TEMPO REAL NO CONECTOR "${targetConn.name}"]:\n` +
+                        `Consulta SQL Executada: ${finalSql}\n` +
+                        (queryRes.wasHealed ? `(Nota: Consulta passou por auto-correção via IA para compatibilidade de esquema).\n` : '') +
+                        `Total de Registros Retornados: ${queryRes.rows.length}\n` +
+                        `Dados Retornados:\n${JSON.stringify(queryRes.rows.slice(0, 30), null, 2)}\n` +
+                        (queryRes.ai_summary ? `Resumo Analítico da IA: ${queryRes.ai_summary}\n` : '') +
+                        `\nDIRETRIZ DE VISUALIZAÇÃO E PRECISÃO:\n` +
+                        `- Apresente os dados com fidelidade absoluta aos registros retornados acima. Proibido inventar produtos, lojas ou valores adicionais.\n` +
+                        `- Quando a resposta envolver métricas comparativas ou rankings, inclua ao final da resposta um bloco json de gráfico interativo exatamente no formato:\n` +
+                        `\`\`\`json\n{\n  "type": "${nlRes.visualization_suggestion === 'pie_chart' ? 'pie' : nlRes.visualization_suggestion === 'line_chart' ? 'line' : 'bar'}",\n  "title": "${nlRes.explanation || 'Gráfico Analítico'}",\n  "data": [\n    { "name": "Nome Real Retornado", "value": 123.45 }\n  ]\n}\n\`\`\`\n` +
+                        `[FIM DOS DADOS EM TEMPO REAL]`;
+                    } else {
+                      databaseContextText = `\n\n[DADOS CONSULTADOS EM TEMPO REAL NO CONECTOR "${targetConn.name}"]:\n` +
+                        `Consulta SQL Executada: ${finalSql}\n` +
+                        `Resultado: A consulta foi executada com sucesso no banco de dados corporativo, porém retornou 0 registros para os filtros informados (nenhuma venda/dado localizado na data ou filial especificada).\n` +
+                        `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO:\n` +
+                        `- Informe com precisão ao usuário que a base de dados corporativa foi consultada e retornou zero registros para esses critérios.\n` +
+                        `- NUNCA invente dados fictícios, produtos genéricos ou simulações. NUNCA gere gráficos com dados inventados.\n` +
+                        `[FIM DOS DADOS EM TEMPO REAL]`;
+                    }
+                  } else {
+                    databaseContextText = `\n\n[AVISO DE ERRO NA CONSULTA CORPORATIVA]:\nA consulta gerada não pôde ser executada com sucesso no conector "${targetConn.name}": ${queryRes.error || 'Erro desconhecido na execução'}.\n` +
+                      `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO: Informe ao usuário com transparência que houve uma falha técnica ao consultar a base corporativa e que não é possível exibir os dados de vendas no momento. NUNCA invente produtos ou números fictícios.`;
+                  }
+                } catch (execErr: any) {
+                  console.warn(`[chat.ts] Falha na execução da consulta com auto-healing:`, execErr.message);
+                  databaseContextText = `\n\n[AVISO DE FALHA NA CONSULTA CORPORATIVA]:\nHouve um erro ao executar a consulta no conector "${targetConn.name}": ${execErr.message}.\n` +
+                    `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO: Informe com transparência ao usuário que a consulta corporativa falhou e não foi possível obter os dados. NUNCA invente dados fictícios.`;
+                }
+              } else {
+                databaseContextText = `\n\n[AVISO DE INDISPONIBILIDADE DE CONSULTA]:\nNão foi possível formular uma consulta válida para os dados do conector "${targetConn.name}" (${nlRes.error || 'Falha na formulação SQL'}).\n` +
+                  `DIRETRIZ OBRIGATÓRIA ANTI-ALUCINAÇÃO: Avise o usuário que não foi possível consultar os dados corporativos no momento e sugira reformular a pergunta. NUNCA invente nomes de produtos, lojas ou valores de vendas fictícios.`;
+              }
+            }
+
+            // Injetar Alertas Proativos e Anomalias Detectadas
+            try {
+              const anomalies = await DatabaseService.detectAnomalies(targetConn.id);
+              if (anomalies && anomalies.length > 0) {
+                const anomalySummary = anomalies
+                  .map(a => `### [${a.level.toUpperCase()}] ${a.title}\n${a.message}`)
+                  .join('\n\n');
+                databaseContextText += `\n\n[ALERTAS OPERACIONAIS E ANOMALIAS CRÍTICAS EM TEMPO REAL]:\n${anomalySummary}\n\n` +
+                  `DIRETRIZ DE APRESENTAÇÃO DOS ALERTAS OPERACIONAIS:\n` +
+                  `- Se a pergunta do usuário tiver afinidade com estoque, abastecimento, rupturas, perdas, auditoria ou compras, apresente estes alertas de forma executiva, detalhando os produtos mais afetados, filiais e ações recomendadas.\n` +
+                  `- Se a pergunta for sobre um assunto específico que NÃO tem relação com estoque ou alertas (ex: ranking de vendas de lojas hoje, metas ou atendentes), concentre-se na resposta direta da pergunta e NÃO polua o texto principal com alertas não solicitados, a menos que o usuário peça um panorama geral da rede.`;
+              }
+            } catch (_) {}
           }
         }
       } catch (err: any) {
-        console.error('Erro ao consultar banco GLPI no chat:', err);
-        databaseContextText = `\n\n[AVISO DE BANCO DE DADOS CONECTADO]: Houve uma tentativa de consultar o banco GLPI mas retornou erro: ${err.message}.`;
+        console.error('Erro ao consultar conector de dados no chat:', err);
+        databaseContextText = `\n\n[AVISO DE FALHA EM CONECTOR DE DADOS]:\nHouve uma falha técnica ao tentar consultar a base de dados corporativa: ${err.message}.\nDIRETRIZ OBRIGATÓRIA: Informe ao usuário que a base de dados corporativa está temporariamente indisponível. NUNCA invente dados ou produtos fictícios.`;
+      }
+
+      if (isDatabaseQuery && !databaseContextText) {
+        databaseContextText = `\n\n[AVISO DE SISTEMA]: A pergunta requer dados corporativos (vendas/produtos/lojas/chamados), mas nenhum conector de dados ativo foi encontrado ou está disponível no momento.\nDIRETRIZ OBRIGATÓRIA: Informe claramente que não há conexão com o banco de dados corporativo disponível para responder à pergunta. Não invente produtos ou números.`;
       }
     }
 
@@ -361,7 +654,30 @@ export function registerChatRoutes(fastify: FastifyInstance, provider: LMStudioP
     const modelSystemPrompt = dbModelSetting?.system_prompt || '';
     const strictFormatPrompt = 'IMPORTANTE: Forneça respostas diretas, limpas e objetivas. Nunca inclua narração de cenários, efeitos visuais, efeitos sonoros ou interpretação de papéis/ambiente entre parênteses.';
 
-    const combinedSystemPrompt = [globalPrompt, assistantPrompt, modelSystemPrompt, strictFormatPrompt].filter(Boolean).join('\n\n');
+    const enterpriseAntiHallucinationPrompt = `[DIRETRIZ DE PRECISÃO ABSOLUTA E ANTI-ALUCINAÇÃO CORPORATIVA]:
+Você é o ORÁCULO SPN, assistente oficial de inteligência corporativa e dados empresariais.
+1. PRECISÃO EM DADOS: Ao responder sobre vendas, faturamento, produtos, estoque, lojas, clientes, cupons ou chamados de TI, baseie-se ESTRITAMENTE nos dados contidos no bloco [DADOS CONSULTADOS EM TEMPO REAL].
+2. TOLERÂNCIA ZERO PARA ALUCINAÇÕES: É TERMINANTEMENTE PROIBIDO inventar, supor ou estimar nomes de produtos (ex: NUNCA mencione produtos de e-commerce genéricos como eletrônicos/Smart TVs/Notebooks quando a rede comercializa produtos farmacêuticos, higiene, perfumaria e conveniência), lojas, quantidades ou valores financeiros.
+3. CONSULTAS SEM DADOS OU COM FALHA: Se o bloco de dados corporativos indicar zero registros, falha técnica ou conector indisponível, informe isso com total transparência e objetividade ao usuário. NUNCA preencha a resposta com tabelas ou gráficos com dados fictícios.
+4. GRÁFICOS INTERATIVOS: Apenas inclua blocos de gráfico interativo (\`\`\`chart ou \`\`\`json) quando existirem dados numéricos reais retornados pelo banco para plotar. NUNCA gere gráficos com dados fictícios ou de exemplo (como "Item A", "Item B").`;
+
+    const nowBR = new Date();
+    const dataAtualBR = nowBR.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }); // DD/MM/AAAA
+    const horaAtualBR = nowBR.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour12: false }); // HH:MM:SS
+    const diaSemanaBR = nowBR.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long' });
+
+    const temporalAndFormattingPrompt = `[INFORMAÇÃO TEMPORAL E DIRETRIZES DE FORMATAÇÃO DO SISTEMA]:
+- Data Atual Oficial: ${dataAtualBR} (${diaSemanaBR.charAt(0).toUpperCase() + diaSemanaBR.slice(1)})
+- Hora Atual Oficial: ${horaAtualBR} (Horário de Brasília - UTC-3)
+- REGRAS OBRIGATÓRIAS DE FORMATAÇÃO:
+  1. Em TODAS as respostas que envolverem datas (incluindo chamados, prazos, relatórios ou perguntas diretas de data), utilize OBRIGATORIAMENTE o formato DD/MM/AAAA (ex: ${dataAtualBR}).
+  2. Em TODAS as respostas que envolverem horários, utilize OBRIGATORIAMENTE o formato HH:MM:SS (ex: ${horaAtualBR}) ou HH:MM.
+  3. Quando perguntado sobre o dia de hoje, a data ou a hora atual, responda DIRETAMENTE com a data e hora do sistema informadas acima. NUNCA utilize placeholders como "[Inserir Data Atual]" ou afirme que não possui relógio em tempo real.
+  4. GERAÇÃO DE GRÁFICOS INTERATIVOS: Sempre que o usuário solicitar gráficos ou quando houver dados numéricos reais retornados pelo banco para métricas comparativas ou rankings, inclua um bloco \`\`\`chart com JSON estruturado para renderização interativa. NUNCA gere gráficos com dados inventados ou fictícios quando a consulta retornar vazia ou falhar.`;
+
+    const lgpdDirective = PrivacyGuard.generateSystemPromptDirective(currentLgpdConfig, detectedUserRole);
+
+    const combinedSystemPrompt = [globalPrompt, assistantPrompt, modelSystemPrompt, strictFormatPrompt, enterpriseAntiHallucinationPrompt, temporalAndFormattingPrompt, lgpdDirective].filter(Boolean).join('\n\n');
 
     const historyForContext: ChatCompletionMessage[] = await Promise.all(
       conv.messages.map(async (m) => {

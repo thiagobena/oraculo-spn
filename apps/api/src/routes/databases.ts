@@ -13,14 +13,14 @@ export function registerDatabaseRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Cadastrar nova conexão de banco de dados
+  // Cadastrar nova conexão de banco/API/Storage/Web
   fastify.post('/api/settings/databases', { preHandler: [requireAdmin] }, async (req, reply) => {
     try {
       const body = req.body as any;
-      if (!body.name || !body.host || !body.database || !body.username) {
+      if (!body.name) {
         return reply.status(400).send({
           success: false,
-          error: 'Campos obrigatórios ausentes: nome, host, banco de dados e usuário.',
+          error: 'O nome do conector é obrigatório.',
         });
       }
 
@@ -72,6 +72,8 @@ export function registerDatabaseRoutes(fastify: FastifyInstance) {
           paramsToTest.database = paramsToTest.database || saved.database;
           paramsToTest.username = paramsToTest.username || saved.username;
           paramsToTest.db_type = paramsToTest.db_type || saved.db_type;
+          paramsToTest.category = paramsToTest.category || saved.category;
+          paramsToTest.config_json = paramsToTest.config_json || saved.config_json;
         }
       }
 
@@ -82,19 +84,108 @@ export function registerDatabaseRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Executar consulta SQL direta (SELECT)
-  fastify.post('/api/settings/databases/query', { preHandler: [requireAdmin] }, async (req, reply) => {
+  // Introspecção de Esquema (Tabelas e Colunas)
+  fastify.post('/api/settings/databases/schema', { preHandler: [requireAdmin] }, async (req, reply) => {
     try {
-      const { connector_id, sql } = req.body as { connector_id: string; sql: string };
-      if (!connector_id || !sql) {
-        return reply.status(400).send({ success: false, error: 'Parâmetros obrigatorios ausentes: connector_id e sql.' });
+      const { connector_id } = req.body as { connector_id: string };
+      if (!connector_id) {
+        return reply.status(400).send({ success: false, error: 'connector_id é obrigatório.' });
       }
 
-      const result = await DatabaseService.executeQuery(connector_id, sql);
+      const result = await DatabaseService.introspectSchema(connector_id);
       return reply.send(result);
     } catch (err: any) {
       return reply.status(500).send({ success: false, error: err.message });
     }
   });
-}
 
+  // Geração de Consulta via Linguagem Natural (NL2SQL)
+  fastify.post('/api/settings/databases/nl2sql', { preHandler: [requireAdmin] }, async (req, reply) => {
+    try {
+      const { connector_id, user_prompt } = req.body as { connector_id: string; user_prompt: string };
+      if (!connector_id || !user_prompt) {
+        return reply.status(400).send({ success: false, error: 'connector_id e user_prompt são obrigatórios.' });
+      }
+
+      const result = await DatabaseService.generateNL2SQL(connector_id, user_prompt);
+      return reply.send(result);
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  // Executar consulta SQL direta / Payload
+  fastify.post('/api/settings/databases/query', { preHandler: [requireAdmin] }, async (req, reply) => {
+    try {
+      const { connector_id, sql, generate_summary } = req.body as {
+        connector_id: string;
+        sql: string;
+        generate_summary?: boolean;
+      };
+      if (!connector_id || !sql) {
+        return reply.status(400).send({ success: false, error: 'Parâmetros obrigatórios ausentes: connector_id e sql.' });
+      }
+
+      const result = await DatabaseService.executeQuery(connector_id, sql, { generateSummary: generate_summary });
+      return reply.send(result);
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  // --- ROTAS DE PRESETS DINÂMICOS ---
+
+  // Listar presets de um conector
+  fastify.get('/api/settings/databases/:id/presets', { preHandler: [requireAdmin] }, async (req, reply) => {
+    try {
+      const { id } = req.params as { id: string };
+      const presets = await DatabaseService.listPresets(id);
+      return reply.send({ success: true, presets });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  // Criar preset
+  fastify.post('/api/settings/databases/:id/presets', { preHandler: [requireAdmin] }, async (req, reply) => {
+    try {
+      const { id } = req.params as { id: string };
+      const body = req.body as any;
+      if (!body.title || !body.query_payload) {
+        return reply.status(400).send({ success: false, error: 'Título e consulta (query_payload) são obrigatórios.' });
+      }
+
+      const preset = await DatabaseService.createPreset({
+        connector_id: id,
+        ...body,
+      });
+      return reply.send({ success: true, preset });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  // Atualizar preset
+  fastify.put('/api/settings/databases/presets/:presetId', { preHandler: [requireAdmin] }, async (req, reply) => {
+    try {
+      const { presetId } = req.params as { presetId: string };
+      const body = req.body as any;
+
+      const preset = await DatabaseService.updatePreset(presetId, body);
+      return reply.send({ success: true, preset });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  // Deletar preset
+  fastify.delete('/api/settings/databases/presets/:presetId', { preHandler: [requireAdmin] }, async (req, reply) => {
+    try {
+      const { presetId } = req.params as { presetId: string };
+      await DatabaseService.deletePreset(presetId);
+      return reply.send({ success: true, message: 'Preset removido com sucesso' });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+}

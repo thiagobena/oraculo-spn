@@ -389,3 +389,105 @@ export interface AuthSessionResponse {
   user: UserItem;
 }
 
+// --- Hub de Conexões & Conhecimento ---
+export type DataSourceCategory = 'database' | 'api' | 'storage' | 'web' | 'automation';
+
+export interface DataSourceConnectorItem {
+  id: string;
+  name: string;
+  category: DataSourceCategory;
+  db_type: string; // mysql | mariadb | postgresql | sqlserver | rest_api | n8n | smb | s3 | web_url
+  host?: string | null;
+  port?: number | null;
+  database?: string | null;
+  username?: string | null;
+  password?: string | null;
+  use_ssl: boolean;
+  is_active: boolean;
+  description?: string | null;
+  config_json?: string | null;
+  semantic_dictionary?: string | null;
+  cache_ttl_seconds: number;
+  mode: 'live_query' | 'rag_sync' | 'action_tool';
+  allowed_roles?: string | null;
+  created_at: string;
+  updated_at: string;
+  presets?: DataSourcePresetItem[];
+}
+
+export interface DataSourcePresetItem {
+  id: string;
+  connector_id: string;
+  title: string;
+  description?: string | null;
+  category: string; // SLA, Status, Financeiro, Técnico, Geral
+  query_payload: string;
+  visualization_type: 'table' | 'bar_chart' | 'pie_chart' | 'line_chart' | 'kpi';
+  badge_color?: string | null;
+  is_system?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SchemaColumnInfo {
+  name: string;
+  type: string;
+  isNullable?: boolean;
+  isPrimaryKey?: boolean;
+  comment?: string | null;
+}
+
+export interface SchemaTableInfo {
+  name: string;
+  comment?: string | null;
+  columns: SchemaColumnInfo[];
+}
+
+export interface SchemaIntrospectionResult {
+  success: boolean;
+  connectorId: string;
+  connectorName: string;
+  dbType: string;
+  tables: SchemaTableInfo[];
+  error?: string;
+}
+
+export interface NL2SQLRequest {
+  connector_id: string;
+  user_prompt: string;
+}
+
+export interface NL2SQLResponse {
+  success: boolean;
+  generated_query: string;
+  explanation: string;
+  visualization_suggestion?: 'table' | 'bar_chart' | 'pie_chart' | 'line_chart' | 'kpi';
+  error?: string;
+}
+
+export interface QueryExecutionResult {
+  success: boolean;
+  connectorName?: string;
+  rows?: any[];
+  columns?: string[];
+  totalRows?: number;
+  executionTimeMs?: number;
+  isCached?: boolean;
+  ai_summary?: string;
+  error?: string;
+}
+
+export interface LGPDConfigData {
+  lgpd_level: number; // 0, 25, 50, 75, 100
+  lgpd_mode: 'disabled' | 'low' | 'smart' | 'high' | 'strict';
+  allow_admin_bypass: boolean;
+  mask_cpf: 'none' | 'partial' | 'full';
+  mask_email: 'none' | 'partial' | 'full';
+  mask_phone: 'none' | 'partial' | 'full';
+  mask_financial: 'none' | 'partial' | 'full';
+  mask_names: 'none' | 'partial' | 'full';
+  audit_sensitive_access: boolean;
+  custom_legal_basis_prompt?: string;
+}
+
+

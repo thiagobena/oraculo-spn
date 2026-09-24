@@ -19,10 +19,13 @@ import {
 import { useAuthStore } from '../store/useAuthStore';
 import { AssistantItem, AuditLogItem, UserItem, ADConfigData, AIProviderItem, ModelInfo, ModelSettingItem } from '@oraculo/shared';
 import { DatabaseSettingsTab } from '../components/DatabaseSettingsTab';
+import { IntegrationsSettingsTab } from '../components/IntegrationsSettingsTab';
+import { LGPDSettingsTab } from '../components/LGPDSettingsTab';
 import {
   Shield,
   Cpu,
   Bot,
+  MessageSquare,
   FileText,
   CheckCircle,
   XCircle,
@@ -57,7 +60,7 @@ import {
 
 export const AdminPage: React.FC = () => {
   const { token } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'providers' | 'models' | 'quotas' | 'ad' | 'users' | 'assistants' | 'audit' | 'databases'>('providers');
+  const [activeTab, setActiveTab] = useState<'providers' | 'models' | 'quotas' | 'ad' | 'users' | 'assistants' | 'audit' | 'databases' | 'messaging' | 'lgpd'>('providers');
 
   // Gestão de LLMs & Parâmetros State
   const [llmModels, setLlmModels] = useState<ModelInfo[]>([]);
@@ -678,7 +681,29 @@ export const AdminPage: React.FC = () => {
               : 'text-slate-400 hover:bg-[#141722] hover:text-slate-200'
           }`}
         >
-          <Database className="w-4 h-4 text-cyan-400 animate-pulse" /> Bancos de Dados
+          <Database className="w-4 h-4 text-cyan-400 animate-pulse" /> Hub de Dados & Conexões
+        </button>
+
+        <button
+          onClick={() => setActiveTab('messaging')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all duration-200 shrink-0 ${
+            activeTab === 'messaging'
+              ? 'bg-gradient-to-r from-emerald-950/80 to-cyan-950/40 text-emerald-300 border border-emerald-500/50 shadow-md shadow-emerald-950/50 ring-1 ring-emerald-500/20'
+              : 'text-slate-400 hover:bg-[#141722] hover:text-slate-200'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4 text-emerald-400" /> WhatsApp & Telegram
+        </button>
+
+        <button
+          onClick={() => setActiveTab('lgpd')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all duration-200 shrink-0 ${
+            activeTab === 'lgpd'
+              ? 'bg-gradient-to-r from-indigo-950/80 to-purple-950/40 text-indigo-300 border border-indigo-500/50 shadow-md shadow-indigo-950/50 ring-1 ring-indigo-500/20'
+              : 'text-slate-400 hover:bg-[#141722] hover:text-slate-200'
+          }`}
+        >
+          <Shield className="w-4 h-4 text-indigo-400" /> LGPD & Privacidade
         </button>
 
         <button
@@ -692,6 +717,12 @@ export const AdminPage: React.FC = () => {
           <FileText className="w-4 h-4 text-slate-400" /> Logs de Auditoria
         </button>
       </div>
+
+      {/* ABA LGPD & PRIVACIDADE */}
+      {activeTab === 'lgpd' && <LGPDSettingsTab token={token || ''} />}
+
+      {/* ABA MENSAGERIA / WHATSAPP & TELEGRAM */}
+      {activeTab === 'messaging' && <IntegrationsSettingsTab token={token || ''} />}
 
       {/* ABA BANCOS DE DADOS */}
       {activeTab === 'databases' && <DatabaseSettingsTab token={token || ''} />}

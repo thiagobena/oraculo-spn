@@ -45,7 +45,7 @@ const MainChatView: React.FC = () => {
       <div className="absolute top-0 left-1/4 w-[600px] h-[400px] bg-gradient-to-br from-[#c86234]/25 via-[#6a301e]/15 to-transparent rounded-full blur-[130px] pointer-events-none" />
 
       <ChatHeader />
-      <div className="flex-1 overflow-y-auto flex flex-col relative z-10">
+      <div className="flex-1 overflow-hidden flex flex-col relative z-10">
         {activeConversation && activeConversation.messages.length > 0 ? (
           <MessageList />
         ) : (
