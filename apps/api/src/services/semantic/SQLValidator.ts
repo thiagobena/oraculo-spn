@@ -41,8 +41,9 @@ export class SQLValidator {
 
     // 2. Proibir comandos destrutivos ou de mutação
     for (const pattern of this.FORBIDDEN_KEYWORDS) {
-      if (pattern.test(trimmed)) {
-        violations.push(`Comando perigoso ou proibido detectado: ${pattern.toString()}`);
+      const match = trimmed.match(pattern);
+      if (match) {
+        violations.push(`Comando destrutivo ou proibido detectado: ${match[0].toUpperCase()}`);
         riskLevel = 'critical';
       }
     }
@@ -56,10 +57,13 @@ export class SQLValidator {
       riskLevel = 'critical';
     }
 
-    // 4. Prevenção contra produto cartesiano não autorizado (CROSS JOIN explícito)
+    // 4. Prevenção contra produto cartesiano não autorizado (CROSS JOIN explícito ou FROM t1, t2)
     if (/\bcross\s+join\b/i.test(trimmed)) {
-      warnings.push('CROSS JOIN detectado. Pode causar explosão combinatorial de linhas no banco.');
-      if (riskLevel === 'low') riskLevel = 'medium';
+      violations.push('CROSS JOIN não autorizado detectado.');
+      riskLevel = 'high';
+    } else if (/\bfrom\s+[a-z0-9_.]+\s*,\s*[a-z0-9_.]+/i.test(trimmed)) {
+      violations.push('Produto cartesiano implícito (múltiplas tabelas separadas por vírgula no FROM) não é permitido. Utilize JOIN explícito.');
+      riskLevel = 'high';
     }
 
     // 5. Garantir limite de linhas seguro (LIMIT ou TOP)
