@@ -1,5 +1,6 @@
 export interface SemanticGraphNode {
   id: string;
+  dataSourceId?: string;
   tableName: string;
   schemaName: string;
   displayName: string;
@@ -28,6 +29,10 @@ export interface SemanticGraphNode {
 
 export interface SemanticGraphEdge {
   id: string;
+  dataSourceId?: string;
+  isCrossSource?: boolean;
+  sourceDataSourceId?: string;
+  targetDataSourceId?: string;
   sourceTableId: string;
   sourceColumnId: string;
   sourceColumnName: string;
@@ -306,6 +311,129 @@ export async function askSemanticLabApi(token: string, question: string, dataSou
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ question, dataSourceId }),
+  });
+  return await res.json();
+}
+
+// 11. Homologação 1-Click de Consulta (Opção 1)
+export async function homologateQueryApi(
+  token: string,
+  payload: {
+    question: string;
+    sql: string;
+    dataSourceId?: string;
+    tablesUsed?: string[];
+    tags?: string;
+  }
+): Promise<{ success: boolean; message: string; query?: ValidatedQueryItem; error?: string }> {
+  const res = await fetch('/api/semantic/queries/homologate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  return await res.json();
+}
+
+// 12. Gestão de Cache Semântico (Opção 3)
+export interface SemanticCacheStats {
+  size: number;
+  hits: number;
+  misses: number;
+  hitRatePct: number;
+}
+
+export async function fetchSemanticCacheStatusApi(
+  token: string
+): Promise<{ success: boolean; stats: SemanticCacheStats; error?: string }> {
+  const res = await fetch('/api/semantic/cache/status', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return await res.json();
+}
+
+export async function clearSemanticCacheApi(
+  token: string
+): Promise<{ success: boolean; message: string; error?: string }> {
+  const res = await fetch('/api/semantic/cache/clear', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return await res.json();
+}
+
+// 13. Detecção Proativa de Schema Drift (Opção 4)
+export interface SchemaDriftItem {
+  schemaName: string;
+  tableName: string;
+  columnName?: string;
+  dataType?: string;
+  existingDataType?: string;
+  comment?: string | null;
+}
+
+export interface SchemaDriftResponse {
+  success: boolean;
+  dataSourceId: string;
+  dataSourceName: string;
+  hasDrift: boolean;
+  checkedAt: string;
+  addedTables: SchemaDriftItem[];
+  removedTables: SchemaDriftItem[];
+  addedColumns: SchemaDriftItem[];
+  removedColumns: SchemaDriftItem[];
+  modifiedColumns: SchemaDriftItem[];
+  summary: {
+    addedTablesCount: number;
+    removedTablesCount: number;
+    addedColumnsCount: number;
+    removedColumnsCount: number;
+    modifiedColumnsCount: number;
+  };
+  error?: string;
+}
+
+export async function fetchSchemaDriftApi(
+  token: string,
+  dataSourceId: string
+): Promise<SchemaDriftResponse> {
+  const res = await fetch(`/api/semantic/drift/${dataSourceId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return await res.json();
+}
+
+// 14. Configurações Globais da Camada Semântica
+export interface SemanticConfig {
+  cacheEnabled: boolean;
+  cacheTtlSeconds: number;
+  driftDetectionEnabled: boolean;
+  crossSourceEnabled: boolean;
+  confidenceThreshold: number;
+}
+
+export async function fetchSemanticConfigApi(
+  token: string
+): Promise<{ success: boolean; config: SemanticConfig; cacheStats: SemanticCacheStats; error?: string }> {
+  const res = await fetch('/api/semantic/config', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return await res.json();
+}
+
+export async function saveSemanticConfigApi(
+  token: string,
+  config: Partial<SemanticConfig>
+): Promise<{ success: boolean; message: string; error?: string }> {
+  const res = await fetch('/api/semantic/config', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(config),
   });
   return await res.json();
 }

@@ -8,6 +8,7 @@ import {
   FlaskConical,
   Activity,
   Layers,
+  Sliders,
 } from 'lucide-react';
 import { DataMapCanvas } from './DataMapCanvas';
 import { BusinessTermsView } from './BusinessTermsView';
@@ -15,6 +16,7 @@ import { MetricsView } from './MetricsView';
 import { ValidatedQueriesView } from './ValidatedQueriesView';
 import { LaboratoryView } from './LaboratoryView';
 import { DiagnosticView } from './DiagnosticView';
+import { SemanticConfigView } from './SemanticConfigView';
 import { fetchDatabaseConnectorsApi } from '../../services/api';
 import { DataSourceConnectorItem } from '@oraculo/shared';
 
@@ -26,7 +28,7 @@ export const SemanticIntelligenceTab: React.FC<SemanticIntelligenceTabProps> = (
   const [connectors, setConnectors] = useState<DataSourceConnectorItem[]>([]);
   const [selectedConnectorId, setSelectedConnectorId] = useState<string>('');
   const [activeSubTab, setActiveSubTab] = useState<
-    'map' | 'dictionary' | 'metrics' | 'validated' | 'lab' | 'diagnostic'
+    'map' | 'dictionary' | 'metrics' | 'validated' | 'lab' | 'diagnostic' | 'config'
   >('map');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -152,6 +154,17 @@ export const SemanticIntelligenceTab: React.FC<SemanticIntelligenceTabProps> = (
         >
           <Activity className="w-4 h-4 text-rose-400" /> Diagnóstico & Cobertura
         </button>
+
+        <button
+          onClick={() => setActiveSubTab('config')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all duration-200 shrink-0 ${
+            activeSubTab === 'config'
+              ? 'bg-amber-600/20 text-amber-300 border border-amber-500/40 shadow-md shadow-amber-950/30'
+              : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+          }`}
+        >
+          <Sliders className="w-4 h-4 text-amber-400" /> Configurações & Otimização
+        </button>
       </div>
 
       {/* Renderização da Sub-Aba Ativa */}
@@ -187,6 +200,14 @@ export const SemanticIntelligenceTab: React.FC<SemanticIntelligenceTabProps> = (
 
           {activeSubTab === 'diagnostic' && (
             <DiagnosticView token={token} dataSourceId={selectedConnectorId} />
+          )}
+
+          {activeSubTab === 'config' && (
+            <SemanticConfigView
+              token={token}
+              dataSourceId={selectedConnectorId}
+              dataSourceName={selectedConnector?.name || 'Fonte'}
+            />
           )}
         </div>
       ) : (

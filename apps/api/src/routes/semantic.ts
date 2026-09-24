@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { requireAdmin } from '../middlewares/authMiddleware.js';
+import { requireAdmin, authenticate } from '../middlewares/authMiddleware.js';
 import { prisma } from '../db/prisma.js';
 import { SchemaSyncService } from '../services/semantic/SchemaSyncService.js';
 import { RelationshipGraphService } from '../services/semantic/RelationshipGraphService.js';
@@ -384,6 +384,220 @@ export function registerSemanticRoutes(fastify: FastifyInstance) {
       });
 
       return reply.send(response);
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  // 11. Homologação 1-Click de Consulta (Opção 1)
+  fastify.post('/api/semantic/queries/homologate', { preHandler: [authenticate] }, async (req, reply) => {
+    try {
+      const body = req.body as {
+        question: string;
+        sql: string;
+        dataSourceId?: string;
+        tablesUsed?: string[];
+        tags?: string;
+      };
+
+      if (!body.question || !body.sql) {
+        return reply.status(400).send({ success: false, error: 'Pergunta e SQL são obrigatórios.' });
+      }
+
+      const normalized = body.question.toLowerCase().trim();
+
+      const existing = await (prisma as any).validatedQuery.findFirst({
+        where: {
+          normalized_question: normalized,
+          data_source_id: body.dataSourceId || null,
+        },
+      });
+
+      let queryRecord;
+      if (existing) {
+        queryRecord = await (prisma as any).validatedQuery.update({
+          where: { id: existing.id },
+          data: {
+            sql: body.sql,
+            tables_used: body.tablesUsed ? JSON.stringify(body.tablesUsed) : existing.tables_used,
+            tags: body.tags || existing.tags || 'gabarito,homologado',
+            validation_status: 'validated',
+            usage_count: { increment: 1 },
+          },
+        });
+      } else {
+        queryRecord = await (prisma as any).validatedQuery.create({
+          data: {
+            data_source_id: body.dataSourceId || null,
+            question: body.question,
+            normalized_question: normalized,
+            sql: body.sql,
+            tables_used: body.tablesUsed ? JSON.stringify(body.tablesUsed) : null,
+            tags: body.tags || 'gabarito,homologado',
+            validation_status: 'validated',
+            usage_count: 1,
+          },
+        });
+      }
+
+      return reply.send({
+        success: true,
+        message: 'Consulta homologada com sucesso como Gabarito definitivo!',
+        query: queryRecord,
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  // 12. Gestão de Cache Semântico (Opção 3)
+  fastify.get('/api/semantic/cache/status', { preHandler: [requireAdmin] }, async (req, reply) => {
+    try {
+      const stats = SemanticDataEngine.getCacheStats();
+      const total = stats.hits + stats.misses;
+      const hitRatePct = total > 0 ? Math.round((stats.hits / total) * 100) : 0;
+      return reply.send({
+        success: true,
+        stats: {
+          ...stats,
+          hitRatePct,
+        },
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  fastify.post('/api/semantic/cache/clear', { preHandler: [requireAdmin] }, async (req, reply) => {
+    try {
+      SemanticDataEngine.clearCache();
+      return reply.send({ success: true, message: 'Cache semântico limpo com sucesso!' });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  // 13. Detecção Proativa de Schema Drift (Opção 4)
+  fastify.get('/api/semantic/drift/:dataSourceId', { preHandler: [requireAdmin] }, async (req, reply) => {
+    try {
+      const { dataSourceId } = req.params as { dataSourceId: string };
+      const drift = await SchemaSyncService.detectSchemaDrift(dataSourceId);
+      return reply.send(drift);
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  // 14. Configurações Globais da Camada Semântica (Persistidas em AppSetting)
+  fastify.get('/api/semantic/config', { preHandler: [requireAdmin] }, async (req, reply) => {
+    try {
+      const settings = await (prisma as any).appSetting.findMany({
+        where: {
+          key: {
+            in: [
+              'semantic_cache_enabled',
+              'semantic_cache_ttl_seconds',
+              'semantic_drift_enabled',
+              'semantic_cross_source_enabled',
+              'semantic_confidence_threshold',
+            ],
+          },
+        },
+      });
+
+      const settingMap = new Map<string, string>();
+      for (const s of settings) {
+        settingMap.set(s.key, s.value);
+      }
+
+      const cacheStats = SemanticDataEngine.getCacheStats();
+      const total = cacheStats.hits + cacheStats.misses;
+      const hitRatePct = total > 0 ? Math.round((cacheStats.hits / total) * 100) : 0;
+
+      return reply.send({
+        success: true,
+        config: {
+          cacheEnabled: settingMap.get('semantic_cache_enabled') !== 'false',
+          cacheTtlSeconds: Number(settingMap.get('semantic_cache_ttl_seconds')) || 300,
+          driftDetectionEnabled: settingMap.get('semantic_drift_enabled') !== 'false',
+          crossSourceEnabled: settingMap.get('semantic_cross_source_enabled') !== 'false',
+          confidenceThreshold: Number(settingMap.get('semantic_confidence_threshold')) || 0.7,
+        },
+        cacheStats: {
+          ...cacheStats,
+          hitRatePct,
+        },
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  fastify.post('/api/semantic/config', { preHandler: [requireAdmin] }, async (req, reply) => {
+    try {
+      const body = req.body as {
+        cacheEnabled?: boolean;
+        cacheTtlSeconds?: number;
+        driftDetectionEnabled?: boolean;
+        crossSourceEnabled?: boolean;
+        confidenceThreshold?: number;
+      };
+
+      const upserts: Promise<any>[] = [];
+
+      if (body.cacheEnabled !== undefined) {
+        upserts.push(
+          (prisma as any).appSetting.upsert({
+            where: { key: 'semantic_cache_enabled' },
+            create: { key: 'semantic_cache_enabled', value: String(body.cacheEnabled) },
+            update: { value: String(body.cacheEnabled) },
+          })
+        );
+      }
+
+      if (body.cacheTtlSeconds !== undefined) {
+        upserts.push(
+          (prisma as any).appSetting.upsert({
+            where: { key: 'semantic_cache_ttl_seconds' },
+            create: { key: 'semantic_cache_ttl_seconds', value: String(body.cacheTtlSeconds) },
+            update: { value: String(body.cacheTtlSeconds) },
+          })
+        );
+      }
+
+      if (body.driftDetectionEnabled !== undefined) {
+        upserts.push(
+          (prisma as any).appSetting.upsert({
+            where: { key: 'semantic_drift_enabled' },
+            create: { key: 'semantic_drift_enabled', value: String(body.driftDetectionEnabled) },
+            update: { value: String(body.driftDetectionEnabled) },
+          })
+        );
+      }
+
+      if (body.crossSourceEnabled !== undefined) {
+        upserts.push(
+          (prisma as any).appSetting.upsert({
+            where: { key: 'semantic_cross_source_enabled' },
+            create: { key: 'semantic_cross_source_enabled', value: String(body.crossSourceEnabled) },
+            update: { value: String(body.crossSourceEnabled) },
+          })
+        );
+      }
+
+      if (body.confidenceThreshold !== undefined) {
+        upserts.push(
+          (prisma as any).appSetting.upsert({
+            where: { key: 'semantic_confidence_threshold' },
+            create: { key: 'semantic_confidence_threshold', value: String(body.confidenceThreshold) },
+            update: { value: String(body.confidenceThreshold) },
+          })
+        );
+      }
+
+      await Promise.all(upserts);
+
+      return reply.send({ success: true, message: 'Configurações semânticas atualizadas com sucesso!' });
     } catch (err: any) {
       return reply.status(500).send({ success: false, error: err.message });
     }

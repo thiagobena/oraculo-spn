@@ -26,10 +26,32 @@ export interface SemanticEngineResponse {
   isAmbiguous?: boolean;
   clarificationQuestion?: string | null;
   usedEngine: 'semantic_v2' | 'legacy_fallback';
+  isCached?: boolean;
+}
+
+interface CacheEntry {
+  timestamp: number;
+  response: SemanticEngineResponse;
 }
 
 export class SemanticDataEngine {
   public static USE_SEMANTIC_DATA_ENGINE = true;
+
+  private static cache = new Map<string, CacheEntry>();
+  public static cacheHits = 0;
+  public static cacheMisses = 0;
+
+  static clearCache(): void {
+    this.cache.clear();
+  }
+
+  static getCacheStats(): { size: number; hits: number; misses: number } {
+    return {
+      size: this.cache.size,
+      hits: this.cacheHits,
+      misses: this.cacheMisses,
+    };
+  }
 
   /**
    * Executa a pipeline completa da Versão 2 (Camada Semântica + Grafo + Planner + Validator)
@@ -48,6 +70,47 @@ export class SemanticDataEngine {
     if (!connector) {
       throw new Error(`Fonte de dados [${dataSourceId}] não encontrada.`);
     }
+
+    // 0. VERIFICAÇÃO DE CACHE SEMÂNTICO (Opção 3)
+    let cacheEnabled = true;
+    let cacheTtlSeconds = 300; // 5 minutos default
+
+    try {
+      const cacheSetting = await (prisma as any).appSetting.findUnique({
+        where: { key: 'semantic_cache_enabled' },
+      });
+      if (cacheSetting && cacheSetting.value === 'false') {
+        cacheEnabled = false;
+      }
+      const ttlSetting = await (prisma as any).appSetting.findUnique({
+        where: { key: 'semantic_cache_ttl_seconds' },
+      });
+      if (ttlSetting && !isNaN(Number(ttlSetting.value))) {
+        cacheTtlSeconds = Number(ttlSetting.value);
+      }
+    } catch {
+      // Fallback para defaults
+    }
+
+    const normalizedKey = `${dataSourceId}:${question.trim().toLowerCase()}`;
+    if (cacheEnabled) {
+      const cached = this.cache.get(normalizedKey);
+      if (cached && (Date.now() - cached.timestamp < cacheTtlSeconds * 1000)) {
+        this.cacheHits++;
+        const cachedResponse: SemanticEngineResponse = {
+          ...cached.response,
+          requestId,
+          executionTimeMs: Math.max(1, Date.now() - startTime),
+          isCached: true,
+          transparencyAudit: {
+            ...cached.response.transparencyAudit,
+            executionTimeMs: Math.max(1, Date.now() - startTime),
+          },
+        };
+        return cachedResponse;
+      }
+    }
+    this.cacheMisses++;
 
     try {
       // 1. INTENT ANALYZER
@@ -171,6 +234,7 @@ export class SemanticDataEngine {
         filtersApplied: plan.filters.map((f) => f.expression),
         confidenceScore: plan.confidenceScore,
         dataSourceName: connector.name,
+        dataSourceId,
       });
 
       // 9. LOG DO RACIOCÍNIO OPERACIONAL (Persistência estruturada sem chain-of-thought)
@@ -201,7 +265,7 @@ export class SemanticDataEngine {
         console.error('Falha ao registrar log operacional semântico:', logErr);
       }
 
-      return {
+      const engineResponse: SemanticEngineResponse = {
         success: true,
         requestId,
         answer: interpretation.naturalAnswer,
@@ -216,6 +280,15 @@ export class SemanticDataEngine {
         transparencyAudit: interpretation.transparencyAudit,
         usedEngine: 'semantic_v2',
       };
+
+      if (cacheEnabled) {
+        this.cache.set(normalizedKey, {
+          timestamp: Date.now(),
+          response: engineResponse,
+        });
+      }
+
+      return engineResponse;
     } catch (err: any) {
       console.error('Falha no SemanticDataEngine:', err);
 

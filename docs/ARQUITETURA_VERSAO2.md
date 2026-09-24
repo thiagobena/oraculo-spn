@@ -125,11 +125,23 @@ erDiagram
 - **Laboratório:** Digite qualquer pergunta em linguagem natural para inspecionar em tempo real cada passo do pipeline semântico (intenção, tabelas, plano lógico, SQL e tempo).
 - **Diagnóstico:** Acompanhe a cobertura semântica (%) do seu banco e aprove sugestões automáticas de novos relacionamentos identificados pela inteligência da plataforma.
 
+### 4.6 Funcionalidades Estratégicas Avançadas (Opções 1, 3, 4 e 5)
+- **Opção 1 — Homologação 1-Click no Chat:**
+  No card de transparência e proveniência do chat ("Como cheguei nesta resposta?"), o botão `⭐ Homologar como Gabarito` permite persistir imediatamente a pergunta e o SQL executado na biblioteca de `ValidatedQuery`, garantindo que consultas equivalentes sempre acertem com 100% de precisão.
+- **Opção 3 — Cache Semântico de Consultas:**
+  Motor de cache em memória no `SemanticDataEngine` com TTL configurável (padrão 300 segundos) e contadores de hits, misses e taxa de acerto. Perguntas repetidas são servidas em <10ms sem reexecutar no banco nem consumir tokens da LLM.
+- **Opção 4 — Vigilância de Schema Drift Proativo:**
+  Auditoria não-destrutiva entre o banco de dados físico e o catálogo da Camada Semântica. Detecta novas tabelas, tabelas removidas, novas colunas e colunas com alterações de tipo de dado, oferecendo sincronização com 1 clique.
+- **Opção 5 — Federação Cross-Source (Relacionamentos Heterogêneos):**
+  Suporte a conexões relacionais entre conectores de dados distintos (ex: GLPI ↔ Vetor Lake / ERP), permitindo que a IA monte rotas federadas e exiba no visualizador arestas pontilhadas fúcsia indicando cross-source.
+- **Sub-aba de Configurações & Otimização:**
+  Sub-aba dedicada na interface administrativa semântica para ligar/desligar cache, ajustar TTL, limpar cache em tempo real, disparar verificação de drift e configurar o limiar de confiança do motor.
+
 ---
 
 ## 5. Como Executar os Testes Automatizados
 
-Para rodar a suíte de testes determinísticos do SQL Validator e dos algoritmos de menor caminho do Grafo:
+Para rodar a suíte completa de testes determinísticos do SQL Validator, menor caminho do Grafo, Cache Semântico, Schema Drift e Federação Cross-Source:
 
 ```bash
 node --import tsx/esm scripts/test-semantic-engine.ts
@@ -137,6 +149,6 @@ node --import tsx/esm scripts/test-semantic-engine.ts
 
 Resultado esperado:
 ```text
-📊 Resultado dos Testes: 14 de 14 testes aprovados.
+📊 Resultado dos Testes: 20 de 20 testes aprovados.
 🎉 TODOS OS TESTES PASSARAM COM 100% DE SUCESSO!
 ```

@@ -14,6 +14,7 @@ export interface InterpretationResult {
     rowCount: number;
     confidenceScore: number;
     dataSourceName: string;
+    dataSourceId?: string;
   };
 }
 
@@ -33,6 +34,7 @@ export class ResultInterpreter {
     filtersApplied: string[];
     confidenceScore: number;
     dataSourceName: string;
+    dataSourceId?: string;
   }): Promise<InterpretationResult> {
     const {
       question,
@@ -46,6 +48,7 @@ export class ResultInterpreter {
       filtersApplied,
       confidenceScore,
       dataSourceName,
+      dataSourceId,
     } = params;
 
     // Se não houver linhas retornadas
@@ -64,6 +67,7 @@ export class ResultInterpreter {
           rowCount: 0,
           confidenceScore,
           dataSourceName,
+          dataSourceId,
         },
       };
     }
@@ -111,6 +115,7 @@ DIRETRIZES FUNDAMENTAIS:
           rowCount: rows.length,
           confidenceScore,
           dataSourceName,
+          dataSourceId,
         },
       };
     } catch (err: any) {
@@ -129,6 +134,7 @@ DIRETRIZES FUNDAMENTAIS:
           rowCount: rows.length,
           confidenceScore,
           dataSourceName,
+          dataSourceId,
         },
       };
     }

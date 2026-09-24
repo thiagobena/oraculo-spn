@@ -52,7 +52,11 @@ import {
   GitCommit,
   Filter,
   Code2,
+  Star,
+  Loader2,
 } from 'lucide-react';
+import { useAuthStore } from '../store/useAuthStore';
+import { homologateQueryApi } from '../services/semanticApi';
 import { ExecutivePresentationModal } from './ExecutivePresentationModal';
 
 interface CodeBlockProps {
@@ -667,8 +671,11 @@ const MessageMetadataFooter: React.FC<{ generation?: GenerationMetrics | null; m
 };
 
 const TransparencyProvenanceCard: React.FC<{ audit?: any }> = ({ audit }) => {
+  const token = useAuthStore((s) => s.token);
   const [isOpen, setIsOpen] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
+  const [isHomologating, setIsHomologating] = useState(false);
+  const [homologated, setHomologated] = useState(false);
 
   if (!audit) return null;
 
@@ -678,6 +685,30 @@ const TransparencyProvenanceCard: React.FC<{ audit?: any }> = ({ audit }) => {
       navigator.clipboard.writeText(audit.sqlExecuted);
       setCopiedSql(true);
       setTimeout(() => setCopiedSql(false), 2000);
+    }
+  };
+
+  const handleHomologate = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!audit.sqlExecuted || !token) return;
+    setIsHomologating(true);
+    try {
+      const res = await homologateQueryApi(token, {
+        question: audit.questionInterpreted,
+        sql: audit.sqlExecuted,
+        dataSourceId: audit.dataSourceId,
+        tablesUsed: audit.tablesUsed,
+        tags: 'gabarito,homologado_chat',
+      });
+      if (res.success) {
+        setHomologated(true);
+      } else {
+        alert(`Erro ao homologar: ${res.error || 'Falha desconhecida'}`);
+      }
+    } catch (err: any) {
+      alert(`Erro ao homologar consulta: ${err.message}`);
+    } finally {
+      setIsHomologating(false);
     }
   };
 
@@ -802,14 +833,37 @@ const TransparencyProvenanceCard: React.FC<{ audit?: any }> = ({ audit }) => {
                   <Code2 className="w-3.5 h-3.5 text-cyan-400" />
                   Consulta SQL Validada & Executada
                 </span>
-                <button
-                  type="button"
-                  onClick={handleCopySql}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition text-[10px] font-mono cursor-pointer"
-                >
-                  {copiedSql ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedSql ? 'Copiado!' : 'Copiar SQL'}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleHomologate}
+                    disabled={isHomologating || homologated}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-semibold transition cursor-pointer ${
+                      homologated
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 hover:text-amber-200'
+                    }`}
+                    title="Homologar esta consulta como Gabarito oficial na Camada Semântica para reaproveitamento futuro"
+                  >
+                    {isHomologating ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : homologated ? (
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <Star className="w-3 h-3 text-amber-400 fill-amber-400/20" />
+                    )}
+                    <span>{homologated ? 'Homologada como Gabarito' : '⭐ Homologar como Gabarito'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopySql}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition text-[10px] font-mono cursor-pointer"
+                  >
+                    {copiedSql ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedSql ? 'Copiado!' : 'Copiar SQL'}</span>
+                  </button>
+                </div>
               </div>
               <pre className="p-3 rounded-xl bg-black/60 border border-white/10 font-mono text-[11px] text-cyan-200/90 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px]">
                 {audit.sqlExecuted}

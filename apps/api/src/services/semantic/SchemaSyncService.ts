@@ -17,51 +17,74 @@ export interface SyncResult {
   executionTimeMs: number;
 }
 
+export interface IntrospectedCol {
+  tableName: string;
+  columnName: string;
+  dataType: string;
+  isNullable: boolean;
+  isPrimaryKey: boolean;
+  comment?: string | null;
+  schemaName: string;
+}
+
+export interface IntrospectedFK {
+  constraintName: string;
+  sourceSchema: string;
+  sourceTable: string;
+  sourceColumn: string;
+  targetSchema: string;
+  targetTable: string;
+  targetColumn: string;
+}
+
+export interface DriftTableItem {
+  schemaName: string;
+  tableName: string;
+  comment?: string | null;
+}
+
+export interface DriftColumnItem {
+  schemaName: string;
+  tableName: string;
+  columnName: string;
+  dataType: string;
+  existingDataType?: string;
+}
+
+export interface SchemaDriftResult {
+  success: boolean;
+  dataSourceId: string;
+  dataSourceName: string;
+  hasDrift: boolean;
+  checkedAt: string;
+  addedTables: DriftTableItem[];
+  removedTables: DriftTableItem[];
+  addedColumns: DriftColumnItem[];
+  removedColumns: DriftColumnItem[];
+  modifiedColumns: DriftColumnItem[];
+  summary: {
+    addedTablesCount: number;
+    removedTablesCount: number;
+    addedColumnsCount: number;
+    removedColumnsCount: number;
+    modifiedColumnsCount: number;
+  };
+}
+
 export class SchemaSyncService {
   /**
-   * Sincroniza a estrutura técnica de um DataSource com a Camada Semântica.
-   * Preserva todo o conhecimento empresarial (descrições, sinônimos, métricas e notas de negócio).
+   * Introspecção física do banco de dados (MySQL / MariaDB / PostgreSQL)
    */
-  static async syncSchema(dataSourceId: string): Promise<SyncResult> {
-    const startTime = Date.now();
-    const connector = await DatabaseService.getConnectorById(dataSourceId);
-    if (!connector) {
-      throw new Error(`Conector de dados [${dataSourceId}] não encontrado.`);
-    }
-
+  public static async introspectPhysical(connector: any): Promise<{
+    tables: Array<{ schemaName: string; tableName: string; comment?: string | null }>;
+    columns: IntrospectedCol[];
+    fks: IntrospectedFK[];
+  }> {
     const dbType = (connector.db_type || 'mysql').toLowerCase();
-    let tablesCreated = 0;
-    let tablesUpdated = 0;
-    let columnsSynced = 0;
-    let relationshipsDetected = 0;
-
-    interface IntrospectedCol {
-      tableName: string;
-      columnName: string;
-      dataType: string;
-      isNullable: boolean;
-      isPrimaryKey: boolean;
-      comment?: string | null;
-      schemaName: string;
-    }
-
-    interface IntrospectedFK {
-      constraintName: string;
-      sourceSchema: string;
-      sourceTable: string;
-      sourceColumn: string;
-      targetSchema: string;
-      targetTable: string;
-      targetColumn: string;
-    }
-
     let introspectedTables: Array<{ schemaName: string; tableName: string; comment?: string | null }> = [];
     let introspectedColumns: IntrospectedCol[] = [];
     let introspectedFKs: IntrospectedFK[] = [];
 
-    // ==========================================
-    // 1. MySQL / MariaDB
-    // ==========================================
     if (dbType === 'mysql' || dbType === 'mariadb') {
       const connection = await mysql.createConnection({
         host: connector.host,
@@ -132,12 +155,7 @@ export class SchemaSyncService {
       } finally {
         await connection.end();
       }
-    }
-
-    // ==========================================
-    // 2. PostgreSQL
-    // ==========================================
-    else if (dbType === 'postgresql' || dbType === 'postgres' || dbType === 'pgsql') {
+    } else if (dbType === 'postgresql' || dbType === 'postgres' || dbType === 'pgsql') {
       const client = new pg.Client({
         host: connector.host || 'localhost',
         port: connector.port ? Number(connector.port) : 5432,
@@ -204,6 +222,176 @@ export class SchemaSyncService {
     } else {
       throw new Error(`Tipo de fonte [${dbType}] ainda não suporta introspecção automática de schema.`);
     }
+
+    return {
+      tables: introspectedTables,
+      columns: introspectedColumns,
+      fks: introspectedFKs,
+    };
+  }
+
+  /**
+   * Detecta divergências proativamente (Schema Drift) sem alterar dados salvos.
+   */
+  static async detectSchemaDrift(dataSourceId: string): Promise<SchemaDriftResult> {
+    const connector = await DatabaseService.getConnectorById(dataSourceId);
+    if (!connector) {
+      throw new Error(`Conector de dados [${dataSourceId}] não encontrado.`);
+    }
+
+    const { tables: physicalTables, columns: physicalColumns } = await this.introspectPhysical(connector);
+
+    const catalogTables = await (prisma as any).semanticTable.findMany({
+      where: { data_source_id: dataSourceId },
+      include: { columns: true },
+    });
+
+    const physicalTableMap = new Map<string, { schemaName: string; tableName: string; comment?: string | null }>();
+    for (const t of physicalTables) {
+      physicalTableMap.set(`${t.schemaName}.${t.tableName}`.toLowerCase(), t);
+    }
+
+    const catalogTableMap = new Map<string, any>();
+    for (const t of catalogTables) {
+      catalogTableMap.set(`${t.schema_name}.${t.table_name}`.toLowerCase(), t);
+    }
+
+    const addedTables: DriftTableItem[] = [];
+    const removedTables: DriftTableItem[] = [];
+    const addedColumns: DriftColumnItem[] = [];
+    const removedColumns: DriftColumnItem[] = [];
+    const modifiedColumns: DriftColumnItem[] = [];
+
+    // 1. Tabelas físicas ausentes ou marcadas como missing no catálogo
+    for (const [key, physTable] of physicalTableMap.entries()) {
+      const catTable = catalogTableMap.get(key);
+      if (!catTable || catTable.status === 'missing') {
+        addedTables.push({
+          schemaName: physTable.schemaName,
+          tableName: physTable.tableName,
+          comment: physTable.comment,
+        });
+      }
+    }
+
+    // 2. Tabelas no catálogo que não existem mais no banco físico
+    for (const [key, catTable] of catalogTableMap.entries()) {
+      if (!physicalTableMap.has(key) && catTable.status !== 'missing') {
+        removedTables.push({
+          schemaName: catTable.schema_name,
+          tableName: catTable.table_name,
+        });
+      }
+    }
+
+    // 3. Colunas adicionadas, removidas ou com tipo modificado
+    const physicalColMap = new Map<string, IntrospectedCol>();
+    for (const c of physicalColumns) {
+      physicalColMap.set(`${c.schemaName}.${c.tableName}.${c.columnName}`.toLowerCase(), c);
+    }
+
+    const catalogColMap = new Map<string, { col: any; table: any }>();
+    for (const t of catalogTables) {
+      for (const c of t.columns) {
+        catalogColMap.set(`${t.schema_name}.${t.table_name}.${c.column_name}`.toLowerCase(), {
+          col: c,
+          table: t,
+        });
+      }
+    }
+
+    // Colunas novas ou tipos divergentes
+    for (const [key, physCol] of physicalColMap.entries()) {
+      const catEntry = catalogColMap.get(key);
+      if (!catEntry || catEntry.col.status === 'missing') {
+        // Apenas reportar coluna nova se a tabela já existir no catálogo (se a tabela for nova, já entra em addedTables)
+        const tableKey = `${physCol.schemaName}.${physCol.tableName}`.toLowerCase();
+        if (catalogTableMap.has(tableKey)) {
+          addedColumns.push({
+            schemaName: physCol.schemaName,
+            tableName: physCol.tableName,
+            columnName: physCol.columnName,
+            dataType: physCol.dataType,
+          });
+        }
+      } else {
+        const catCol = catEntry.col;
+        if (catCol.data_type && physCol.dataType && catCol.data_type.toLowerCase() !== physCol.dataType.toLowerCase()) {
+          modifiedColumns.push({
+            schemaName: physCol.schemaName,
+            tableName: physCol.tableName,
+            columnName: physCol.columnName,
+            dataType: physCol.dataType,
+            existingDataType: catCol.data_type,
+          });
+        }
+      }
+    }
+
+    // Colunas removidas no banco físico
+    for (const [key, catEntry] of catalogColMap.entries()) {
+      if (!physicalColMap.has(key) && catEntry.col.status !== 'missing') {
+        const tableKey = `${catEntry.table.schema_name}.${catEntry.table.table_name}`.toLowerCase();
+        if (physicalTableMap.has(tableKey)) {
+          removedColumns.push({
+            schemaName: catEntry.table.schema_name,
+            tableName: catEntry.table.table_name,
+            columnName: catEntry.col.column_name,
+            dataType: catEntry.col.data_type,
+          });
+        }
+      }
+    }
+
+    const hasDrift =
+      addedTables.length > 0 ||
+      removedTables.length > 0 ||
+      addedColumns.length > 0 ||
+      removedColumns.length > 0 ||
+      modifiedColumns.length > 0;
+
+    return {
+      success: true,
+      dataSourceId,
+      dataSourceName: connector.name,
+      hasDrift,
+      checkedAt: new Date().toISOString(),
+      addedTables,
+      removedTables,
+      addedColumns,
+      removedColumns,
+      modifiedColumns,
+      summary: {
+        addedTablesCount: addedTables.length,
+        removedTablesCount: removedTables.length,
+        addedColumnsCount: addedColumns.length,
+        removedColumnsCount: removedColumns.length,
+        modifiedColumnsCount: modifiedColumns.length,
+      },
+    };
+  }
+
+  /**
+   * Sincroniza a estrutura técnica de um DataSource com a Camada Semântica.
+   * Preserva todo o conhecimento empresarial (descrições, sinônimos, métricas e notas de negócio).
+   */
+  static async syncSchema(dataSourceId: string): Promise<SyncResult> {
+    const startTime = Date.now();
+    const connector = await DatabaseService.getConnectorById(dataSourceId);
+    if (!connector) {
+      throw new Error(`Conector de dados [${dataSourceId}] não encontrado.`);
+    }
+
+    let tablesCreated = 0;
+    let tablesUpdated = 0;
+    let columnsSynced = 0;
+    let relationshipsDetected = 0;
+
+    const {
+      tables: introspectedTables,
+      columns: introspectedColumns,
+      fks: introspectedFKs,
+    } = await this.introspectPhysical(connector);
 
     // ==========================================
     // 3. PERSISTÊNCIA NA CAMADA SEMÂNTICA

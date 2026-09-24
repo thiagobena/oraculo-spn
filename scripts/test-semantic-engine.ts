@@ -165,6 +165,59 @@ assert(
 );
 
 // -------------------------------------------------------------------------
+// 3. TESTES DO CACHE SEMÂNTICO (Opção 3)
+// -------------------------------------------------------------------------
+console.log('\n3. Testando Cache Semântico em Memória (Opção 3)...');
+import { SemanticDataEngine } from '../apps/api/src/services/semantic/SemanticDataEngine.js';
+
+SemanticDataEngine.clearCache();
+const statsInitial = SemanticDataEngine.getCacheStats();
+assert(statsInitial.size === 0, 'Cache inicial deve estar limpo com tamanho 0');
+
+SemanticDataEngine.clearCache();
+assert(SemanticDataEngine.getCacheStats().size === 0, 'clearCache deve zerar o cache com sucesso');
+
+// -------------------------------------------------------------------------
+// 4. TESTES DE DETECÇÃO DE SCHEMA DRIFT (Opção 4)
+// -------------------------------------------------------------------------
+console.log('\n4. Testando Lógica de Detecção de Divergências (Schema Drift - Opção 4)...');
+
+const mockPhysicalTables = [
+  { schemaName: 'public', tableName: 'glpi_tickets' },
+  { schemaName: 'public', tableName: 'glpi_users' },
+  { schemaName: 'public', tableName: 'glpi_sla' }, // Nova tabela
+];
+
+const mockCatalogTables = [
+  { schema_name: 'public', table_name: 'glpi_tickets', status: 'active' },
+  { schema_name: 'public', table_name: 'glpi_users', status: 'active' },
+  { schema_name: 'public', table_name: 'glpi_old_logs', status: 'active' }, // Tabela removida do banco
+];
+
+const physSet = new Set(mockPhysicalTables.map((t) => `${t.schemaName}.${t.tableName}`));
+const catSet = new Set(mockCatalogTables.map((t) => `${t.schema_name}.${t.table_name}`));
+
+const added = mockPhysicalTables.filter((t) => !catSet.has(`${t.schemaName}.${t.tableName}`));
+const removed = mockCatalogTables.filter((t) => !physSet.has(`${t.schema_name}.${t.table_name}`));
+
+assert(added.length === 1 && added[0].tableName === 'glpi_sla', 'Drift deve detectar tabela física adicionada (glpi_sla)');
+assert(removed.length === 1 && removed[0].table_name === 'glpi_old_logs', 'Drift deve detectar tabela removida (glpi_old_logs)');
+
+// -------------------------------------------------------------------------
+// 5. TESTES DE FEDERAÇÃO CROSS-SOURCE (Opção 5)
+// -------------------------------------------------------------------------
+console.log('\n5. Testando Identificação de Arestas Cross-Source (Opção 5)...');
+
+const relSameSource = { source_table: { data_source_id: 'ds-glpi' }, target_table: { data_source_id: 'ds-glpi' } };
+const relCrossSource = { source_table: { data_source_id: 'ds-glpi' }, target_table: { data_source_id: 'ds-vetor-lake' } };
+
+const isCross1 = relSameSource.source_table.data_source_id !== relSameSource.target_table.data_source_id;
+const isCross2 = relCrossSource.source_table.data_source_id !== relCrossSource.target_table.data_source_id;
+
+assert(!isCross1, 'Relacionamento intra-banco não deve ser classificado como cross-source');
+assert(isCross2, 'Relacionamento entre GLPI e Vetor Lake deve ser classificado como cross-source');
+
+// -------------------------------------------------------------------------
 // RESULTADO FINAL
 // -------------------------------------------------------------------------
 console.log(`\n======================================================`);

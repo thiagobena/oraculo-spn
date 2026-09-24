@@ -2,6 +2,7 @@ import { prisma } from '../../db/prisma.js';
 
 export interface GraphNode {
   id: string;
+  dataSourceId: string;
   tableName: string;
   schemaName: string;
   displayName: string;
@@ -30,6 +31,10 @@ export interface GraphNode {
 
 export interface GraphEdge {
   id: string;
+  dataSourceId: string;
+  isCrossSource: boolean;
+  sourceDataSourceId?: string;
+  targetDataSourceId?: string;
   sourceTableId: string;
   sourceColumnId: string;
   sourceColumnName: string;
@@ -71,7 +76,15 @@ export class RelationshipGraphService {
    */
   static async getGraph(dataSourceId?: string): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
     const tableWhere = dataSourceId ? { data_source_id: dataSourceId } : {};
-    const relWhere = dataSourceId ? { data_source_id: dataSourceId } : {};
+    const relWhere = dataSourceId
+      ? {
+          OR: [
+            { data_source_id: dataSourceId },
+            { source_table: { data_source_id: dataSourceId } },
+            { target_table: { data_source_id: dataSourceId } },
+          ],
+        }
+      : {};
 
     const tables = await (prisma as any).semanticTable.findMany({
       where: tableWhere,
@@ -86,15 +99,41 @@ export class RelationshipGraphService {
     const relationships = await (prisma as any).semanticRelationship.findMany({
       where: relWhere,
       include: {
-        source_table: true,
+        source_table: {
+          include: {
+            columns: { orderBy: { column_name: 'asc' } },
+          },
+        },
         source_column: true,
-        target_table: true,
+        target_table: {
+          include: {
+            columns: { orderBy: { column_name: 'asc' } },
+          },
+        },
         target_column: true,
       },
     });
 
-    const nodes: GraphNode[] = tables.map((t: any) => ({
+    // Se houver tabelas conectadas via cross-source que não estejam em tables, incluir para completar o grafo
+    const tableMap = new Map<string, any>();
+    for (const t of tables) {
+      tableMap.set(t.id, t);
+    }
+
+    for (const r of relationships) {
+      if (r.source_table && !tableMap.has(r.source_table.id)) {
+        tableMap.set(r.source_table.id, r.source_table);
+      }
+      if (r.target_table && !tableMap.has(r.target_table.id)) {
+        tableMap.set(r.target_table.id, r.target_table);
+      }
+    }
+
+    const allTables = Array.from(tableMap.values());
+
+    const nodes: GraphNode[] = allTables.map((t: any) => ({
       id: t.id,
+      dataSourceId: t.data_source_id,
       tableName: t.table_name,
       schemaName: t.schema_name,
       displayName: t.display_name || t.table_name,
@@ -106,10 +145,10 @@ export class RelationshipGraphService {
       aiEnabled: t.ai_enabled,
       priority: t.priority,
       status: t.status,
-      columnsCount: t.columns.length,
+      columnsCount: t.columns?.length || 0,
       posX: t.pos_x ?? 0,
       posY: t.pos_y ?? 0,
-      columns: t.columns.map((c: any) => ({
+      columns: (t.columns || []).map((c: any) => ({
         id: c.id,
         columnName: c.column_name,
         displayName: c.display_name || c.column_name,
@@ -121,23 +160,32 @@ export class RelationshipGraphService {
       })),
     }));
 
-    const edges: GraphEdge[] = relationships.map((r: any) => ({
-      id: r.id,
-      sourceTableId: r.source_table_id,
-      sourceColumnId: r.source_column_id,
-      sourceColumnName: r.source_column?.column_name || 'id',
-      targetTableId: r.target_table_id,
-      targetColumnId: r.target_column_id,
-      targetColumnName: r.target_column?.column_name || 'id',
-      cardinality: r.cardinality,
-      relType: r.rel_type,
-      joinType: r.join_type,
-      joinExpression: r.join_expression || `${r.source_table?.table_name}.${r.source_column?.column_name} = ${r.target_table?.table_name}.${r.target_column?.column_name}`,
-      businessDescription: r.business_description,
-      confidence: r.confidence,
-      status: r.status,
-      priority: r.priority,
-    }));
+    const edges: GraphEdge[] = relationships.map((r: any) => {
+      const isCross = r.source_table?.data_source_id !== r.target_table?.data_source_id;
+      return {
+        id: r.id,
+        dataSourceId: r.data_source_id,
+        isCrossSource: isCross,
+        sourceDataSourceId: r.source_table?.data_source_id,
+        targetDataSourceId: r.target_table?.data_source_id,
+        sourceTableId: r.source_table_id,
+        sourceColumnId: r.source_column_id,
+        sourceColumnName: r.source_column?.column_name || 'id',
+        targetTableId: r.target_table_id,
+        targetColumnId: r.target_column_id,
+        targetColumnName: r.target_column?.column_name || 'id',
+        cardinality: r.cardinality,
+        relType: isCross ? 'cross_source' : r.rel_type,
+        joinType: r.join_type,
+        joinExpression:
+          r.join_expression ||
+          `${r.source_table?.table_name}.${r.source_column?.column_name} = ${r.target_table?.table_name}.${r.target_column?.column_name}`,
+        businessDescription: r.business_description,
+        confidence: r.confidence,
+        status: r.status,
+        priority: r.priority,
+      };
+    });
 
     return { nodes, edges };
   }

@@ -181,8 +181,13 @@ export const DataMapCanvas: React.FC<DataMapCanvasProps> = ({
       .map((e) => {
         let strokeColor = '#06b6d4'; // Cyan default (physical)
         let strokeDash = undefined;
+        let animated = e.status === 'validated';
 
-        if (e.relType === 'logical') {
+        if (e.isCrossSource || e.relType === 'cross_source') {
+          strokeColor = '#ec4899'; // Fuchsia for cross-source
+          strokeDash = '4,4';
+          animated = true;
+        } else if (e.relType === 'logical') {
           strokeColor = '#a855f7'; // Purple
         } else if (e.relType === 'semantic') {
           strokeColor = '#10b981'; // Emerald
@@ -196,21 +201,23 @@ export const DataMapCanvas: React.FC<DataMapCanvasProps> = ({
           strokeDash = '4,4';
         }
 
+        const isCross = e.isCrossSource || e.relType === 'cross_source';
+
         return {
           id: e.id,
           source: e.sourceTableId,
           sourceHandle: `${e.sourceColumnName}-source`,
           target: e.targetTableId,
           targetHandle: `${e.targetColumnName}-target`,
-          animated: e.status === 'validated',
-          label: `${e.cardinality} (${e.joinType})`,
-          labelStyle: { fill: '#94a3b8', fontSize: 10, fontFamily: 'monospace' },
+          animated,
+          label: isCross ? `${e.cardinality} (${e.joinType} • Cross)` : `${e.cardinality} (${e.joinType})`,
+          labelStyle: { fill: isCross ? '#f472b6' : '#94a3b8', fontSize: 10, fontFamily: 'monospace', fontWeight: isCross ? 'bold' : 'normal' },
           labelBgStyle: { fill: '#0f172a', fillOpacity: 0.8 },
           labelBgPadding: [4, 2] as [number, number],
           labelBgBorderRadius: 4,
           style: {
             stroke: strokeColor,
-            strokeWidth: 2,
+            strokeWidth: isCross ? 2.5 : 2,
             strokeDasharray: strokeDash,
             opacity: e.status === 'disabled' ? 0.4 : 1,
           },
